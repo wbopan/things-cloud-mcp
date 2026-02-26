@@ -25,4 +25,4 @@ The server listens on port 8080 by default (set `PORT` to override). Optionally 
 
 ## Live Demo
 
-https://things-mcp.wenbo.io
+https://thingscloudmcp.com

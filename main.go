@@ -1596,7 +1596,7 @@ func main() {
 	hooks := &server.Hooks{}
 	hooks.AddAfterInitialize(func(ctx context.Context, id any, message *mcp.InitializeRequest, result *mcp.InitializeResult) {
 		result.ServerInfo.Icons = []mcp.Icon{
-			{Src: "https://things-mcp.wenbo.io/favicon.svg", MIMEType: "image/svg+xml"},
+			{Src: "https://thingscloudmcp.com/favicon.svg", MIMEType: "image/svg+xml"},
 		}
 	})
 
