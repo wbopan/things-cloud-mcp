@@ -163,21 +163,21 @@ func todayMidnightUTC() int64 {
 // Recurrence parser: user-friendly string → wire-format JSON
 // ---------------------------------------------------------------------------
 
-func parseRecurrence(s string) (*json.RawMessage, error) {
+func parseRecurrence(s string, refDate time.Time) (*json.RawMessage, error) {
 	s = strings.TrimSpace(strings.ToLower(s))
 	if s == "" || s == "none" {
 		return nil, nil
 	}
 
-	today := todayMidnightUTC()
+	ref := time.Date(refDate.Year(), refDate.Month(), refDate.Day(), 0, 0, 0, 0, time.UTC).Unix()
 	base := map[string]any{
 		"rrv": 4,
 		"tp":  0,
 		"rc":  0,
 		"ts":  0,
 		"ed":  64092211200,
-		"ia":  today,
-		"sr":  today,
+		"ia":  ref,
+		"sr":  ref,
 	}
 
 	switch {
@@ -199,7 +199,7 @@ func parseRecurrence(s string) (*json.RawMessage, error) {
 	case s == "weekly":
 		base["fu"] = 256
 		base["fa"] = 1
-		base["of"] = []map[string]any{{"dy": 0}}
+		base["of"] = []map[string]any{{"wd": int(refDate.Weekday())}}
 
 	case strings.HasPrefix(s, "weekly:"):
 		dayStr := strings.TrimPrefix(s, "weekly:")
@@ -219,7 +219,7 @@ func parseRecurrence(s string) (*json.RawMessage, error) {
 		}
 		base["fu"] = 256
 		base["fa"] = n
-		base["of"] = []map[string]any{{"dy": 0}}
+		base["of"] = []map[string]any{{"wd": int(refDate.Weekday())}}
 
 	case s == "monthly":
 		base["fu"] = 8
@@ -402,7 +402,14 @@ func newTaskCreatePayload(title string, opts map[string]string) TaskCreatePayloa
 	var rr *json.RawMessage
 	var icsd *int64
 	if v, ok := opts["recurrence"]; ok && v != "" {
-		parsed, err := parseRecurrence(v)
+		// Use schedule date as reference for weekday, fall back to today
+		recRef := time.Now()
+		if schedStr, ok := opts["schedule"]; ok {
+			if dt := parseDate(schedStr); dt != nil {
+				recRef = *dt
+			}
+		}
+		parsed, err := parseRecurrence(v, recRef)
 		if err == nil && parsed != nil {
 			rr = parsed
 			today := todayMidnightUTC()
@@ -1312,7 +1319,7 @@ func (t *ThingsMCP) handleCreateTask(_ context.Context, req mcp.CallToolRequest)
 
 	// Validate recurrence format early
 	if v, ok := opts["recurrence"]; ok && v != "" {
-		if _, err := parseRecurrence(v); err != nil {
+		if _, err := parseRecurrence(v, time.Now()); err != nil {
 			return errResult(err.Error()), nil
 		}
 	}
@@ -1362,7 +1369,7 @@ func (t *ThingsMCP) handleCreateProject(_ context.Context, req mcp.CallToolReque
 
 	// Validate recurrence format early
 	if v, ok := opts["recurrence"]; ok && v != "" {
-		if _, err := parseRecurrence(v); err != nil {
+		if _, err := parseRecurrence(v, time.Now()); err != nil {
 			return errResult(err.Error()), nil
 		}
 	}
@@ -1629,7 +1636,14 @@ func (t *ThingsMCP) handleEditTask(_ context.Context, req mcp.CallToolRequest) (
 		if v == "none" {
 			u.ClearRecurrence()
 		} else {
-			rr, err := parseRecurrence(v)
+			// Use schedule date as reference for weekday, fall back to today
+			recRef := time.Now()
+			if schedStr := req.GetString("schedule", ""); schedStr != "" {
+				if dt := parseDate(schedStr); dt != nil {
+					recRef = *dt
+				}
+			}
+			rr, err := parseRecurrence(v, recRef)
 			if err != nil {
 				return errResult(err.Error()), nil
 			}
