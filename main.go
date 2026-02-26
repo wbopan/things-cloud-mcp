@@ -345,6 +345,14 @@ func newTaskCreatePayload(title string, opts map[string]string) TaskCreatePayloa
 			st = 2
 		case "inbox":
 			st = 0
+		default:
+			// Try parsing as YYYY-MM-DD date
+			if t := parseDate(v); t != nil {
+				ts := t.Unix()
+				sr = &ts
+				tir = &ts
+				st = 2 // Upcoming; Things auto-moves overdue tasks to Today with date shown
+			}
 		}
 	}
 	if v, ok := opts["note"]; ok && v != "" {
@@ -354,16 +362,6 @@ func newTaskCreatePayload(title string, opts map[string]string) TaskCreatePayloa
 		if t := parseDate(v); t != nil {
 			ts := t.Unix()
 			dd = &ts
-		}
-	}
-	if v, ok := opts["scheduled"]; ok {
-		if t := parseDate(v); t != nil {
-			ts := t.Unix()
-			sr = &ts
-			tir = &ts
-			if _, hasSchedule := opts["schedule"]; !hasSchedule {
-				st = 1
-			}
 		}
 	}
 	if v, ok := opts["project_uuid"]; ok && v != "" {
@@ -1303,7 +1301,7 @@ func (t *ThingsMCP) handleCreateTask(_ context.Context, req mcp.CallToolRequest)
 	}
 
 	opts := make(map[string]string)
-	for _, key := range []string{"note", "schedule", "deadline", "scheduled", "project_uuid", "heading_uuid", "area_uuid", "tags", "checklist", "reminder_date", "reminder_time", "recurrence"} {
+	for _, key := range []string{"note", "schedule", "deadline", "project_uuid", "heading_uuid", "area_uuid", "tags", "checklist", "reminder_date", "reminder_time", "recurrence"} {
 		if v := req.GetString(key, ""); v != "" {
 			opts[key] = v
 		}
@@ -1353,7 +1351,7 @@ func (t *ThingsMCP) handleCreateProject(_ context.Context, req mcp.CallToolReque
 	}
 
 	opts := map[string]string{"type": "project"}
-	for _, key := range []string{"note", "schedule", "deadline", "scheduled", "area_uuid", "tags", "reminder_date", "reminder_time", "recurrence"} {
+	for _, key := range []string{"note", "schedule", "deadline", "area_uuid", "tags", "reminder_date", "reminder_time", "recurrence"} {
 		if v := req.GetString(key, ""); v != "" {
 			opts[key] = v
 		}
@@ -1583,20 +1581,17 @@ func (t *ThingsMCP) handleEditTask(_ context.Context, req mcp.CallToolRequest) (
 			u.Schedule(2, nil, nil)
 		case "inbox":
 			u.Schedule(0, nil, nil)
+		default:
+			// Try parsing as YYYY-MM-DD date
+			if dt := parseDate(sched); dt != nil {
+				ts := dt.Unix()
+				u.Schedule(2, ts, ts)
+			}
 		}
 	}
 	if v := req.GetString("deadline", ""); v != "" {
 		if dt := parseDate(v); dt != nil {
 			u.Deadline(dt.Unix())
-		}
-	}
-	if v := req.GetString("scheduled", ""); v != "" {
-		if dt := parseDate(v); dt != nil {
-			ts := dt.Unix()
-			u.Scheduled(ts, ts)
-			if sched == "" {
-				u.Schedule(1, ts, ts)
-			}
 		}
 	}
 	if v := req.GetString("area_uuid", ""); v != "" {
@@ -1924,9 +1919,8 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Task title")),
 				mcp.WithString("note", mcp.Description("Task note/description")),
-				mcp.WithString("schedule", mcp.Description("Schedule: today, anytime, someday, inbox"), mcp.Enum("today", "anytime", "someday", "inbox")),
+				mcp.WithString("schedule", mcp.Description("When to schedule: today, anytime, someday, inbox, or a date (YYYY-MM-DD). Dates go to Upcoming and auto-move to Today when due.")),
 				mcp.WithString("deadline", mcp.Description("Deadline date (YYYY-MM-DD)")),
-				mcp.WithString("scheduled", mcp.Description("Scheduled date (YYYY-MM-DD)")),
 				mcp.WithString("project_uuid", mcp.Description("Project UUID to add task to")),
 				mcp.WithString("heading_uuid", mcp.Description("Heading UUID to add task under")),
 				mcp.WithString("area_uuid", mcp.Description("Area UUID to add task to")),
@@ -1959,9 +1953,8 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Project title")),
 				mcp.WithString("note", mcp.Description("Project note/description")),
-				mcp.WithString("schedule", mcp.Description("Schedule: today, anytime (default), someday"), mcp.Enum("today", "anytime", "someday")),
+				mcp.WithString("schedule", mcp.Description("When to schedule: today, anytime (default), someday, or a date (YYYY-MM-DD).")),
 				mcp.WithString("deadline", mcp.Description("Deadline date (YYYY-MM-DD)")),
-				mcp.WithString("scheduled", mcp.Description("Scheduled date (YYYY-MM-DD)")),
 				mcp.WithString("area_uuid", mcp.Description("Area UUID to add project to")),
 				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs")),
 				mcp.WithString("reminder_date", mcp.Description("Reminder date (YYYY-MM-DD). Must be used with reminder_time.")),
@@ -2061,9 +2054,8 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("uuid", mcp.Required(), mcp.Description("Task or project UUID")),
 				mcp.WithString("title", mcp.Description("New title")),
 				mcp.WithString("note", mcp.Description("New note")),
-				mcp.WithString("schedule", mcp.Description("Schedule: today, anytime, someday, inbox"), mcp.Enum("today", "anytime", "someday", "inbox")),
+				mcp.WithString("schedule", mcp.Description("When to schedule: today, anytime, someday, inbox, or a date (YYYY-MM-DD). Dates go to Upcoming and auto-move to Today when due.")),
 				mcp.WithString("deadline", mcp.Description("Deadline date (YYYY-MM-DD)")),
-				mcp.WithString("scheduled", mcp.Description("Scheduled date (YYYY-MM-DD)")),
 				mcp.WithString("area_uuid", mcp.Description("Area UUID")),
 				mcp.WithString("project_uuid", mcp.Description("Project UUID")),
 				mcp.WithString("heading_uuid", mcp.Description("Heading UUID")),
