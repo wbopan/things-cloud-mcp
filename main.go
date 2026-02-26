@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"hash/crc32"
@@ -191,7 +193,7 @@ func newTaskCreatePayload(title string, opts map[string]string) TaskCreatePayloa
 			st = 1
 		}
 	}
-	if v, ok := opts["when"]; ok {
+	if v, ok := opts["schedule"]; ok {
 		switch v {
 		case "today":
 			st = 1
@@ -220,26 +222,26 @@ func newTaskCreatePayload(title string, opts map[string]string) TaskCreatePayloa
 			ts := t.Unix()
 			sr = &ts
 			tir = &ts
-			if _, hasWhen := opts["when"]; !hasWhen {
+			if _, hasSchedule := opts["schedule"]; !hasSchedule {
 				st = 1
 			}
 		}
 	}
 	if v, ok := opts["project_uuid"]; ok && v != "" {
 		pr = []string{v}
-		if _, hasWhen := opts["when"]; !hasWhen {
+		if _, hasSchedule := opts["schedule"]; !hasSchedule {
 			st = 1
 		}
 	}
 	if v, ok := opts["heading_uuid"]; ok && v != "" {
 		agr = []string{v}
-		if _, hasWhen := opts["when"]; !hasWhen {
+		if _, hasSchedule := opts["schedule"]; !hasSchedule {
 			st = 1
 		}
 	}
 	if v, ok := opts["area_uuid"]; ok && v != "" {
 		ar = []string{v}
-		if _, hasWhen := opts["when"]; !hasWhen {
+		if _, hasSchedule := opts["schedule"]; !hasSchedule {
 			st = 1
 		}
 	}
@@ -298,25 +300,28 @@ func (u *taskUpdate) build() map[string]any { return u.fields }
 // JSON output types
 // ---------------------------------------------------------------------------
 
+type Ref struct {
+	UUID string `json:"uuid"`
+	Name string `json:"name"`
+}
+
 type TaskOutput struct {
-	UUID          string   `json:"uuid"`
-	Title         string   `json:"title"`
-	Note          string   `json:"note,omitempty"`
-	Status        int      `json:"status"`
-	InTrash       bool     `json:"inTrash"`
-	IsProject     bool     `json:"isProject"`
-	Schedule      int      `json:"schedule"`
-	ScheduledDate *string  `json:"scheduledDate,omitempty"`
-	DeadlineDate  *string  `json:"deadlineDate,omitempty"`
-	AreaIDs       []string `json:"areaIds,omitempty"`
-	ParentIDs     []string `json:"parentIds,omitempty"`
-	TagIDs        []string `json:"tagIds,omitempty"`
+	UUID          string  `json:"uuid"`
+	Title         string  `json:"title"`
+	Note          string  `json:"note,omitempty"`
+	Status        string  `json:"status"`
+	Schedule      string  `json:"schedule"`
+	ScheduledDate *string `json:"scheduledDate,omitempty"`
+	DeadlineDate  *string `json:"deadlineDate,omitempty"`
+	Areas         []Ref   `json:"areas,omitempty"`
+	Project       *Ref    `json:"project,omitempty"`
+	Tags          []Ref   `json:"tags,omitempty"`
 }
 
 type ChecklistOutput struct {
 	UUID   string `json:"uuid"`
 	Title  string `json:"title"`
-	Status int    `json:"status"`
+	Status string `json:"status"`
 }
 
 type TaskDetailOutput struct {
@@ -324,26 +329,68 @@ type TaskDetailOutput struct {
 	Checklist []ChecklistOutput `json:"checklist,omitempty"`
 }
 
-func taskToOutput(t *thingscloud.Task) TaskOutput {
-	out := TaskOutput{
-		UUID:      t.UUID,
-		Title:     t.Title,
-		Note:      t.Note,
-		Status:    int(t.Status),
-		InTrash:   t.InTrash,
-		IsProject: t.Type == thingscloud.TaskTypeProject,
-		Schedule:  int(t.Schedule),
-		AreaIDs:   t.AreaIDs,
-		ParentIDs: t.ParentTaskIDs,
-		TagIDs:    t.TagIDs,
+func statusString(s thingscloud.TaskStatus) string {
+	switch s {
+	case 3:
+		return "completed"
+	case 2:
+		return "canceled"
+	default:
+		return "pending"
 	}
-	if t.ScheduledDate != nil {
-		s := t.ScheduledDate.Format("2006-01-02")
+}
+
+func scheduleString(st thingscloud.TaskSchedule, scheduledDate *time.Time) string {
+	switch st {
+	case 0:
+		return "inbox"
+	case 1:
+		if scheduledDate != nil && !scheduledDate.After(time.Now()) {
+			return "today"
+		}
+		return "anytime"
+	case 2:
+		if scheduledDate != nil {
+			return "upcoming"
+		}
+		return "someday"
+	default:
+		return "inbox"
+	}
+}
+
+func (t *ThingsMCP) taskToOutput(task *thingscloud.Task) TaskOutput {
+	state := t.getState()
+	out := TaskOutput{
+		UUID:     task.UUID,
+		Title:    task.Title,
+		Note:     task.Note,
+		Status:   statusString(task.Status),
+		Schedule: scheduleString(task.Schedule, task.ScheduledDate),
+	}
+	if task.ScheduledDate != nil && task.ScheduledDate.Year() > 1970 {
+		s := task.ScheduledDate.Format("2006-01-02")
 		out.ScheduledDate = &s
 	}
-	if t.DeadlineDate != nil {
-		s := t.DeadlineDate.Format("2006-01-02")
+	if task.DeadlineDate != nil && task.DeadlineDate.Year() > 1970 {
+		s := task.DeadlineDate.Format("2006-01-02")
 		out.DeadlineDate = &s
+	}
+	for _, areaID := range task.AreaIDs {
+		if area, ok := state.Areas[areaID]; ok {
+			out.Areas = append(out.Areas, Ref{UUID: areaID, Name: area.Title})
+		}
+	}
+	if len(task.ParentTaskIDs) > 0 {
+		pid := task.ParentTaskIDs[0]
+		if parent, ok := state.Tasks[pid]; ok {
+			out.Project = &Ref{UUID: pid, Name: parent.Title}
+		}
+	}
+	for _, tagID := range task.TagIDs {
+		if tag, ok := state.Tags[tagID]; ok {
+			out.Tags = append(out.Tags, Ref{UUID: tagID, Name: tag.Title})
+		}
 	}
 	return out
 }
@@ -359,25 +406,20 @@ type ThingsMCP struct {
 	mu      sync.RWMutex
 }
 
-func NewThingsMCP() (*ThingsMCP, error) {
-	username := os.Getenv("THINGS_USERNAME")
-	password := os.Getenv("THINGS_PASSWORD")
-	if username == "" || password == "" {
-		return nil, fmt.Errorf("THINGS_USERNAME and THINGS_PASSWORD are required")
-	}
-
-	c := thingscloud.New(thingscloud.APIEndpoint, username, password)
+// NewThingsMCPForUser creates a ThingsMCP instance for a specific user.
+func NewThingsMCPForUser(email, password string) (*ThingsMCP, error) {
+	c := thingscloud.New(thingscloud.APIEndpoint, email, password)
 	if os.Getenv("THINGS_DEBUG") != "" {
 		c.Debug = true
 	}
 
-	log.Println("Verifying Things Cloud credentials...")
+	log.Printf("Verifying Things Cloud credentials for %s...", email)
 	if _, err := c.Verify(); err != nil {
 		return nil, fmt.Errorf("login: %w", err)
 	}
-	log.Println("Credentials verified.")
+	log.Printf("Credentials verified for %s.", email)
 
-	log.Println("Fetching history...")
+	log.Printf("Fetching history for %s...", email)
 	history, err := c.OwnHistory()
 	if err != nil {
 		return nil, fmt.Errorf("get history: %w", err)
@@ -385,13 +427,126 @@ func NewThingsMCP() (*ThingsMCP, error) {
 	if err := history.Sync(); err != nil {
 		return nil, fmt.Errorf("sync history: %w", err)
 	}
-	log.Println("History synced.")
+	log.Printf("History synced for %s.", email)
 
 	t := &ThingsMCP{client: c, history: history}
 	if err := t.rebuildState(); err != nil {
 		return nil, err
 	}
+
 	return t, nil
+}
+
+// ---------------------------------------------------------------------------
+// Multi-user management
+// ---------------------------------------------------------------------------
+
+type contextKey string
+
+const userContextKey contextKey = "things_user"
+
+type UserInfo struct {
+	Email    string
+	Password string
+	Token    string // raw Bearer token (JWT validation added by OAuth task)
+}
+
+type UserManager struct {
+	users map[string]*ThingsMCP // keyed by email
+	oauth *OAuthServer          // set after OAuthServer is created
+	mu    sync.RWMutex
+}
+
+func NewUserManager() *UserManager {
+	return &UserManager{users: make(map[string]*ThingsMCP)}
+}
+
+func (um *UserManager) GetOrCreateUser(email, password string) (*ThingsMCP, error) {
+	um.mu.RLock()
+	if t, ok := um.users[email]; ok {
+		um.mu.RUnlock()
+		return t, nil
+	}
+	um.mu.RUnlock()
+
+	// Create new user instance (outside lock to avoid blocking other users)
+	t, err := NewThingsMCPForUser(email, password)
+	if err != nil {
+		return nil, err
+	}
+
+	um.mu.Lock()
+	// Double-check after acquiring write lock
+	if existing, ok := um.users[email]; ok {
+		um.mu.Unlock()
+		return existing, nil
+	}
+	um.users[email] = t
+	um.mu.Unlock()
+
+	return t, nil
+}
+
+// httpContextFunc extracts user identity from the HTTP request and stores it in context.
+func (um *UserManager) httpContextFunc(ctx context.Context, r *http.Request) context.Context {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return ctx
+	}
+
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		// Store raw token for JWT validation (implemented by OAuth task)
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		return context.WithValue(ctx, userContextKey, &UserInfo{Token: token})
+	}
+
+	if strings.HasPrefix(authHeader, "Basic ") {
+		encoded := strings.TrimPrefix(authHeader, "Basic ")
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return ctx
+		}
+		parts := strings.SplitN(string(decoded), ":", 2)
+		if len(parts) != 2 {
+			return ctx
+		}
+		return context.WithValue(ctx, userContextKey, &UserInfo{
+			Email:    parts[0],
+			Password: parts[1],
+		})
+	}
+
+	return ctx
+}
+
+// getUserFromContext extracts the user's ThingsMCP instance from the request context.
+func getUserFromContext(ctx context.Context, um *UserManager) (*ThingsMCP, error) {
+	val := ctx.Value(userContextKey)
+	if val == nil {
+		return nil, fmt.Errorf("authentication required: provide Authorization header (Basic or Bearer)")
+	}
+	info, ok := val.(*UserInfo)
+	if !ok {
+		return nil, fmt.Errorf("invalid user context")
+	}
+
+	// Bearer token path — resolve JWT via OAuthServer
+	if info.Token != "" {
+		if um.oauth == nil {
+			return nil, fmt.Errorf("Bearer token authentication not configured")
+		}
+		email, password, err := um.oauth.ResolveBearer(info.Token)
+		if err != nil {
+			return nil, fmt.Errorf("Bearer auth failed: %w", err)
+		}
+		return um.GetOrCreateUser(email, password)
+	}
+
+	if info.Email == "" || info.Password == "" {
+		return nil, fmt.Errorf("invalid credentials")
+	}
+
+	return um.GetOrCreateUser(info.Email, info.Password)
 }
 
 func (t *ThingsMCP) rebuildState() error {
@@ -429,7 +584,17 @@ func (t *ThingsMCP) getState() *memory.State {
 	return t.state
 }
 
+func (t *ThingsMCP) syncAndRebuild() error {
+	if err := t.history.Sync(); err != nil {
+		return fmt.Errorf("sync: %w", err)
+	}
+	return t.rebuildState()
+}
+
 func (t *ThingsMCP) writeAndSync(items ...thingscloud.Identifiable) error {
+	if err := t.history.Sync(); err != nil {
+		return fmt.Errorf("pre-write sync: %w", err)
+	}
 	if err := t.history.Write(items...); err != nil {
 		return err
 	}
@@ -455,6 +620,16 @@ func (t *ThingsMCP) findProjectUUID(name string) string {
 	for _, task := range state.Tasks {
 		if task.Type == thingscloud.TaskTypeProject && strings.EqualFold(task.Title, name) {
 			return task.UUID
+		}
+	}
+	return ""
+}
+
+func (t *ThingsMCP) findTagUUID(name string) string {
+	state := t.getState()
+	for _, tag := range state.Tags {
+		if strings.EqualFold(tag.Title, name) {
+			return tag.UUID
 		}
 	}
 	return ""
@@ -574,82 +749,126 @@ func errResult(msg string) *mcp.CallToolResult {
 // ---------------------------------------------------------------------------
 
 func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := t.syncAndRebuild(); err != nil {
+		return errResult(fmt.Sprintf("sync: %v", err)), nil
+	}
 	state := t.getState()
-	filter := req.GetString("filter", "")
+
+	schedule := req.GetString("schedule", "")
+	scheduledBefore := req.GetString("scheduled_before", "")
+	scheduledAfter := req.GetString("scheduled_after", "")
+	deadlineBefore := req.GetString("deadline_before", "")
+	deadlineAfter := req.GetString("deadline_after", "")
+	tagName := req.GetString("tag", "")
 	areaName := req.GetString("area", "")
 	projectName := req.GetString("project", "")
+	inTrash := req.GetBool("in_trash", false)
+	isCompleted := req.GetBool("is_completed", false)
 
-	// Parse filter: keywords or date/date-range
-	var filterFn func(*thingscloud.Task) bool
-	switch filter {
-	case "":
-		filterFn = nil
-	case "today":
-		todayStart := time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), 0, 0, 0, 0, time.UTC)
-		filterFn = func(task *thingscloud.Task) bool {
-			return task.Schedule == thingscloud.TaskScheduleAnytime && task.ScheduledDate != nil && task.ScheduledDate.Equal(todayStart)
+	// Pre-resolve names to UUIDs
+	var areaUUID, projectUUID, tagUUID string
+	if areaName != "" {
+		areaUUID = t.findAreaUUID(areaName)
+		if areaUUID == "" {
+			return errResult(fmt.Sprintf("area not found: %s", areaName)), nil
 		}
-	case "inbox":
-		filterFn = func(task *thingscloud.Task) bool {
-			return task.Schedule == thingscloud.TaskScheduleInbox
+	}
+	if projectName != "" {
+		projectUUID = t.findProjectUUID(projectName)
+		if projectUUID == "" {
+			return errResult(fmt.Sprintf("project not found: %s", projectName)), nil
 		}
-	case "anytime":
-		filterFn = func(task *thingscloud.Task) bool {
-			return task.Schedule == thingscloud.TaskScheduleAnytime
+	}
+	if tagName != "" {
+		tagUUID = t.findTagUUID(tagName)
+		if tagUUID == "" {
+			return errResult(fmt.Sprintf("tag not found: %s", tagName)), nil
 		}
-	case "someday":
-		filterFn = func(task *thingscloud.Task) bool {
-			return task.Schedule == 2
+	}
+
+	// Parse date filters
+	var scheduledBeforeDate, scheduledAfterDate, deadlineBeforeDate, deadlineAfterDate *time.Time
+	if scheduledBefore != "" {
+		scheduledBeforeDate = parseDate(scheduledBefore)
+		if scheduledBeforeDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", scheduledBefore)), nil
 		}
-	default:
-		// Try date range: YYYY-MM-DD..YYYY-MM-DD or single date: YYYY-MM-DD
-		if parts := strings.SplitN(filter, "..", 2); len(parts) == 2 {
-			from := parseDate(parts[0])
-			to := parseDate(parts[1])
-			if from == nil || to == nil {
-				return errResult(fmt.Sprintf("invalid date range: %s", filter)), nil
-			}
-			filterFn = func(task *thingscloud.Task) bool {
-				if task.ScheduledDate == nil {
-					return false
-				}
-				return !task.ScheduledDate.Before(*from) && !task.ScheduledDate.After(*to)
-			}
-		} else {
-			date := parseDate(filter)
-			if date == nil {
-				return errResult(fmt.Sprintf("invalid filter: %s (use today/inbox/anytime/someday/YYYY-MM-DD/YYYY-MM-DD..YYYY-MM-DD)", filter)), nil
-			}
-			filterFn = func(task *thingscloud.Task) bool {
-				return task.ScheduledDate != nil && task.ScheduledDate.Equal(*date)
-			}
+	}
+	if scheduledAfter != "" {
+		scheduledAfterDate = parseDate(scheduledAfter)
+		if scheduledAfterDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", scheduledAfter)), nil
+		}
+	}
+	if deadlineBefore != "" {
+		deadlineBeforeDate = parseDate(deadlineBefore)
+		if deadlineBeforeDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", deadlineBefore)), nil
+		}
+	}
+	if deadlineAfter != "" {
+		deadlineAfterDate = parseDate(deadlineAfter)
+		if deadlineAfterDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", deadlineAfter)), nil
 		}
 	}
 
 	var tasks []TaskOutput
 	for _, task := range state.Tasks {
-		if task.InTrash || task.Status == 3 || task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
+		// Skip headings and projects
+		if task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
+			continue
+		}
+		// Default: exclude trashed and completed
+		if !inTrash && task.InTrash {
+			continue
+		}
+		if !isCompleted && task.Status == 3 {
 			continue
 		}
 
-		if filterFn != nil && !filterFn(task) {
+		// Schedule filter
+		if schedule != "" {
+			taskSchedule := scheduleString(task.Schedule, task.ScheduledDate)
+			if taskSchedule != schedule {
+				continue
+			}
+		}
+
+		// Date range filters (exclusive)
+		if scheduledBeforeDate != nil {
+			if task.ScheduledDate == nil || !task.ScheduledDate.Before(*scheduledBeforeDate) {
+				continue
+			}
+		}
+		if scheduledAfterDate != nil {
+			if task.ScheduledDate == nil || !task.ScheduledDate.After(*scheduledAfterDate) {
+				continue
+			}
+		}
+		if deadlineBeforeDate != nil {
+			if task.DeadlineDate == nil || !task.DeadlineDate.Before(*deadlineBeforeDate) {
+				continue
+			}
+		}
+		if deadlineAfterDate != nil {
+			if task.DeadlineDate == nil || !task.DeadlineDate.After(*deadlineAfterDate) {
+				continue
+			}
+		}
+
+		// Name-based filters
+		if areaUUID != "" && !containsStr(task.AreaIDs, areaUUID) {
+			continue
+		}
+		if projectUUID != "" && !containsStr(task.ParentTaskIDs, projectUUID) {
+			continue
+		}
+		if tagUUID != "" && !containsStr(task.TagIDs, tagUUID) {
 			continue
 		}
 
-		if areaName != "" {
-			areaUUID := t.findAreaUUID(areaName)
-			if areaUUID == "" || !containsStr(task.AreaIDs, areaUUID) {
-				continue
-			}
-		}
-		if projectName != "" {
-			projectUUID := t.findProjectUUID(projectName)
-			if projectUUID == "" || !containsStr(task.ParentTaskIDs, projectUUID) {
-				continue
-			}
-		}
-
-		tasks = append(tasks, taskToOutput(task))
+		tasks = append(tasks, t.taskToOutput(task))
 	}
 
 	if tasks == nil {
@@ -663,18 +882,21 @@ func (t *ThingsMCP) handleShowTask(_ context.Context, req mcp.CallToolRequest) (
 	if err != nil {
 		return errResult("uuid is required"), nil
 	}
+	if err := t.syncAndRebuild(); err != nil {
+		return errResult(fmt.Sprintf("sync: %v", err)), nil
+	}
 
 	state := t.getState()
 	for _, task := range state.Tasks {
 		if strings.HasPrefix(task.UUID, uuidPrefix) {
-			out := TaskDetailOutput{TaskOutput: taskToOutput(task)}
+			out := TaskDetailOutput{TaskOutput: t.taskToOutput(task)}
 			// Add checklist items
 			for _, cli := range state.CheckListItems {
 				if containsStr(cli.TaskIDs, task.UUID) {
 					out.Checklist = append(out.Checklist, ChecklistOutput{
 						UUID:   cli.UUID,
 						Title:  cli.Title,
-						Status: int(cli.Status),
+						Status: statusString(cli.Status),
 					})
 				}
 			}
@@ -688,6 +910,9 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 	projectUUID, err := req.RequireString("uuid")
 	if err != nil {
 		return errResult("uuid is required"), nil
+	}
+	if err := t.syncAndRebuild(); err != nil {
+		return errResult(fmt.Sprintf("sync: %v", err)), nil
 	}
 
 	state := t.getState()
@@ -738,13 +963,13 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 		placed := false
 		for _, hid := range task.ActionGroupIDs {
 			if h, ok := headingMap[hid]; ok {
-				h.Tasks = append(h.Tasks, taskToOutput(task))
+				h.Tasks = append(h.Tasks, t.taskToOutput(task))
 				placed = true
 				break
 			}
 		}
 		if !placed {
-			unfiled = append(unfiled, taskToOutput(task))
+			unfiled = append(unfiled, t.taskToOutput(task))
 		}
 	}
 
@@ -760,7 +985,7 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 	}
 
 	out := ProjectDetailOutput{
-		TaskOutput:   taskToOutput(project),
+		TaskOutput:   t.taskToOutput(project),
 		Headings:     headings,
 		UnfiledTasks: unfiled,
 	}
@@ -768,11 +993,14 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 }
 
 func (t *ThingsMCP) handleListProjects(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := t.syncAndRebuild(); err != nil {
+		return errResult(fmt.Sprintf("sync: %v", err)), nil
+	}
 	state := t.getState()
 	var projects []TaskOutput
 	for _, task := range state.Tasks {
 		if task.Type == thingscloud.TaskTypeProject && !task.InTrash && task.Status != 3 {
-			projects = append(projects, taskToOutput(task))
+			projects = append(projects, t.taskToOutput(task))
 		}
 	}
 	if projects == nil {
@@ -785,6 +1013,9 @@ func (t *ThingsMCP) handleListHeadings(_ context.Context, req mcp.CallToolReques
 	projectUUID, err := req.RequireString("project_uuid")
 	if err != nil {
 		return errResult("project_uuid is required"), nil
+	}
+	if err := t.syncAndRebuild(); err != nil {
+		return errResult(fmt.Sprintf("sync: %v", err)), nil
 	}
 
 	state := t.getState()
@@ -805,6 +1036,9 @@ func (t *ThingsMCP) handleListHeadings(_ context.Context, req mcp.CallToolReques
 }
 
 func (t *ThingsMCP) handleListAreas(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := t.syncAndRebuild(); err != nil {
+		return errResult(fmt.Sprintf("sync: %v", err)), nil
+	}
 	state := t.getState()
 	type AreaOutput struct {
 		UUID  string `json:"uuid"`
@@ -821,6 +1055,9 @@ func (t *ThingsMCP) handleListAreas(_ context.Context, _ mcp.CallToolRequest) (*
 }
 
 func (t *ThingsMCP) handleListTags(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := t.syncAndRebuild(); err != nil {
+		return errResult(fmt.Sprintf("sync: %v", err)), nil
+	}
 	state := t.getState()
 	type TagOutput struct {
 		UUID      string   `json:"uuid"`
@@ -850,7 +1087,7 @@ func (t *ThingsMCP) handleCreateTask(_ context.Context, req mcp.CallToolRequest)
 	}
 
 	opts := make(map[string]string)
-	for _, key := range []string{"note", "when", "deadline", "scheduled", "project_uuid", "heading_uuid", "area_uuid", "tags", "checklist"} {
+	for _, key := range []string{"note", "schedule", "deadline", "scheduled", "project_uuid", "heading_uuid", "area_uuid", "tags", "checklist"} {
 		if v := req.GetString(key, ""); v != "" {
 			opts[key] = v
 		}
@@ -893,7 +1130,7 @@ func (t *ThingsMCP) handleCreateProject(_ context.Context, req mcp.CallToolReque
 	}
 
 	opts := map[string]string{"type": "project"}
-	for _, key := range []string{"note", "when", "deadline", "scheduled", "area_uuid", "tags"} {
+	for _, key := range []string{"note", "schedule", "deadline", "scheduled", "area_uuid", "tags"} {
 		if v := req.GetString(key, ""); v != "" {
 			opts[key] = v
 		}
@@ -1013,9 +1250,9 @@ func (t *ThingsMCP) handleEditTask(_ context.Context, req mcp.CallToolRequest) (
 	if v := req.GetString("note", ""); v != "" {
 		u.Note(v)
 	}
-	when := req.GetString("when", "")
-	if when != "" {
-		switch when {
+	sched := req.GetString("schedule", "")
+	if sched != "" {
+		switch sched {
 		case "today":
 			today := todayMidnightUTC()
 			u.Schedule(1, today, today)
@@ -1036,31 +1273,42 @@ func (t *ThingsMCP) handleEditTask(_ context.Context, req mcp.CallToolRequest) (
 		if dt := parseDate(v); dt != nil {
 			ts := dt.Unix()
 			u.Scheduled(ts, ts)
-			if when == "" {
+			if sched == "" {
 				u.Schedule(1, ts, ts)
 			}
 		}
 	}
 	if v := req.GetString("area_uuid", ""); v != "" {
 		u.Area(v)
-		if when == "" {
-			u.Schedule(1, 0, 0)
+		if sched == "" {
+			u.Schedule(1, nil, nil)
 		}
 	}
 	if v := req.GetString("project_uuid", ""); v != "" {
 		u.Project(v)
-		if when == "" {
-			u.Schedule(1, 0, 0)
+		if sched == "" {
+			u.Schedule(1, nil, nil)
 		}
 	}
 	if v := req.GetString("heading_uuid", ""); v != "" {
 		u.Heading(v)
-		if when == "" {
-			u.Schedule(1, 0, 0)
+		if sched == "" {
+			u.Schedule(1, nil, nil)
 		}
 	}
 	if v := req.GetString("tags", ""); v != "" {
 		u.Tags(strings.Split(v, ","))
+	}
+	if v := req.GetString("status", ""); v != "" {
+		switch v {
+		case "completed":
+			u.Status(3).StopDate(nowTs())
+		case "canceled":
+			u.Status(2).StopDate(nowTs())
+		case "pending":
+			u.Status(0)
+			u.fields["sp"] = nil
+		}
 	}
 
 	env := writeEnvelope{id: taskUUID, action: 1, kind: "Task6", payload: u.build()}
@@ -1070,25 +1318,6 @@ func (t *ThingsMCP) handleEditTask(_ context.Context, req mcp.CallToolRequest) (
 	return jsonResult(map[string]string{"status": "updated", "uuid": taskUUID}), nil
 }
 
-func (t *ThingsMCP) handleCompleteTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	taskUUID, err := req.RequireString("uuid")
-	if err != nil {
-		return errResult("uuid is required"), nil
-	}
-
-	if err := t.validateTaskUUID(taskUUID); err != nil {
-		return errResult(err.Error()), nil
-	}
-
-	ts := nowTs()
-	u := newTaskUpdate().Status(3).StopDate(ts)
-	env := writeEnvelope{id: taskUUID, action: 1, kind: "Task6", payload: u.build()}
-
-	if err := t.writeAndSync(env); err != nil {
-		return errResult(fmt.Sprintf("complete task: %v", err)), nil
-	}
-	return jsonResult(map[string]string{"status": "completed", "uuid": taskUUID}), nil
-}
 
 func (t *ThingsMCP) handleTrashTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	taskUUID, err := req.RequireString("uuid")
@@ -1109,25 +1338,6 @@ func (t *ThingsMCP) handleTrashTask(_ context.Context, req mcp.CallToolRequest) 
 	return jsonResult(map[string]string{"status": "trashed", "uuid": taskUUID}), nil
 }
 
-func (t *ThingsMCP) handleMoveToToday(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	taskUUID, err := req.RequireString("uuid")
-	if err != nil {
-		return errResult("uuid is required"), nil
-	}
-
-	if err := t.validateTaskUUID(taskUUID); err != nil {
-		return errResult(err.Error()), nil
-	}
-
-	today := todayMidnightUTC()
-	u := newTaskUpdate().Schedule(1, today, today)
-	env := writeEnvelope{id: taskUUID, action: 1, kind: "Task6", payload: u.build()}
-
-	if err := t.writeAndSync(env); err != nil {
-		return errResult(fmt.Sprintf("move to today: %v", err)), nil
-	}
-	return jsonResult(map[string]string{"status": "moved-to-today", "uuid": taskUUID}), nil
-}
 
 // ---------------------------------------------------------------------------
 // Batch operations
@@ -1138,65 +1348,127 @@ func (t *ThingsMCP) handleMoveToToday(_ context.Context, req mcp.CallToolRequest
 // MCP tool definitions
 // ---------------------------------------------------------------------------
 
-func defineTools(t *ThingsMCP) []server.ServerTool {
+func defineTools(um *UserManager) []server.ServerTool {
+	// wrap creates a handler closure that extracts ThingsMCP from context via UserManager.
+	wrap := func(fn func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error)) server.ToolHandlerFunc {
+		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			t, err := getUserFromContext(ctx, um)
+			if err != nil {
+				return errResult(err.Error()), nil
+			}
+			return fn(t, ctx, req)
+		}
+	}
+
 	return []server.ServerTool{
 		// --- Read tools ---
 		{
 			Tool: mcp.NewTool("list_tasks",
-				mcp.WithDescription("List tasks with optional filters. Returns JSON array of tasks."),
-				mcp.WithString("filter", mcp.Description("Filter: today, inbox, anytime, someday, YYYY-MM-DD, or YYYY-MM-DD..YYYY-MM-DD for date range")),
+				mcp.WithDescription("List tasks with optional filters"),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("schedule", mcp.Description("Filter by schedule"), mcp.Enum("inbox", "today", "anytime", "someday", "upcoming")),
+				mcp.WithString("scheduled_before", mcp.Description("YYYY-MM-DD, exclusive")),
+				mcp.WithString("scheduled_after", mcp.Description("YYYY-MM-DD, exclusive")),
+				mcp.WithString("deadline_before", mcp.Description("YYYY-MM-DD, exclusive")),
+				mcp.WithString("deadline_after", mcp.Description("YYYY-MM-DD, exclusive")),
+				mcp.WithString("tag", mcp.Description("Filter by tag name")),
 				mcp.WithString("area", mcp.Description("Filter by area name")),
 				mcp.WithString("project", mcp.Description("Filter by project name")),
+				mcp.WithBoolean("in_trash", mcp.Description("Include trashed items (default false)")),
+				mcp.WithBoolean("is_completed", mcp.Description("Include completed items (default false)")),
 			),
-			Handler: t.handleListTasks,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleListTasks(ctx, req)
+			}),
 		},
 		{
 			Tool: mcp.NewTool("show_task",
-				mcp.WithDescription("Show detailed info for a task by UUID (or UUID prefix). Includes checklist items."),
+				mcp.WithDescription("Show task details including checklist. Accepts UUID prefix."),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("uuid", mcp.Required(), mcp.Description("Task UUID or prefix")),
 			),
-			Handler: t.handleShowTask,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleShowTask(ctx, req)
+			}),
 		},
 		{
 			Tool: mcp.NewTool("show_project",
-				mcp.WithDescription("Show project detail: info, headings, and tasks grouped by heading."),
+				mcp.WithDescription("Show project with headings and grouped tasks"),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("uuid", mcp.Required(), mcp.Description("Project UUID")),
 			),
-			Handler: t.handleShowProject,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleShowProject(ctx, req)
+			}),
 		},
 		{
 			Tool: mcp.NewTool("list_projects",
-				mcp.WithDescription("List all active projects. Returns JSON array."),
+				mcp.WithDescription("List all active projects"),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
 			),
-			Handler: t.handleListProjects,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleListProjects(ctx, req)
+			}),
 		},
 		{
 			Tool: mcp.NewTool("list_headings",
-				mcp.WithDescription("List headings (section dividers) in a project."),
+				mcp.WithDescription("List headings in a project"),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("project_uuid", mcp.Required(), mcp.Description("Project UUID")),
 			),
-			Handler: t.handleListHeadings,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleListHeadings(ctx, req)
+			}),
 		},
 		{
 			Tool: mcp.NewTool("list_areas",
-				mcp.WithDescription("List all areas. Returns JSON array."),
+				mcp.WithDescription("List all areas"),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
 			),
-			Handler: t.handleListAreas,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleListAreas(ctx, req)
+			}),
 		},
 		{
 			Tool: mcp.NewTool("list_tags",
-				mcp.WithDescription("List all tags. Returns JSON array."),
+				mcp.WithDescription("List all tags"),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
 			),
-			Handler: t.handleListTags,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleListTags(ctx, req)
+			}),
 		},
 
 		// --- Create tools ---
 		{
 			Tool: mcp.NewTool("create_task",
-				mcp.WithDescription("Create a new task in Things 3."),
+				mcp.WithDescription("Create a task"),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Task title")),
 				mcp.WithString("note", mcp.Description("Task note/description")),
-				mcp.WithString("when", mcp.Description("Schedule: today, anytime, someday, inbox"), mcp.Enum("today", "anytime", "someday", "inbox")),
+				mcp.WithString("schedule", mcp.Description("Schedule: today, anytime, someday, inbox"), mcp.Enum("today", "anytime", "someday", "inbox")),
 				mcp.WithString("deadline", mcp.Description("Deadline date (YYYY-MM-DD)")),
 				mcp.WithString("scheduled", mcp.Description("Scheduled date (YYYY-MM-DD)")),
 				mcp.WithString("project_uuid", mcp.Description("Project UUID to add task to")),
@@ -1205,85 +1477,99 @@ func defineTools(t *ThingsMCP) []server.ServerTool {
 				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs")),
 				mcp.WithString("checklist", mcp.Description("Comma-separated checklist items")),
 			),
-			Handler: t.handleCreateTask,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleCreateTask(ctx, req)
+			}),
 		},
 		{
 			Tool: mcp.NewTool("create_heading",
-				mcp.WithDescription("Create a heading (section divider) inside a project."),
+				mcp.WithDescription("Create a heading in a project"),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Heading title")),
 				mcp.WithString("project_uuid", mcp.Required(), mcp.Description("Project UUID to add heading to")),
 			),
-			Handler: t.handleCreateHeading,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleCreateHeading(ctx, req)
+			}),
 		},
 		{
 			Tool: mcp.NewTool("create_project",
-				mcp.WithDescription("Create a new project in Things 3."),
+				mcp.WithDescription("Create a project"),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Project title")),
 				mcp.WithString("note", mcp.Description("Project note/description")),
-				mcp.WithString("when", mcp.Description("Schedule: today, anytime, someday, inbox"), mcp.Enum("today", "anytime", "someday", "inbox")),
+				mcp.WithString("schedule", mcp.Description("Schedule: today, anytime, someday, inbox"), mcp.Enum("today", "anytime", "someday", "inbox")),
 				mcp.WithString("deadline", mcp.Description("Deadline date (YYYY-MM-DD)")),
 				mcp.WithString("scheduled", mcp.Description("Scheduled date (YYYY-MM-DD)")),
 				mcp.WithString("area_uuid", mcp.Description("Area UUID to add project to")),
 				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs")),
 			),
-			Handler: t.handleCreateProject,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleCreateProject(ctx, req)
+			}),
 		},
 		{
 			Tool: mcp.NewTool("create_area",
-				mcp.WithDescription("Create a new area in Things 3."),
+				mcp.WithDescription("Create an area"),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("name", mcp.Required(), mcp.Description("Area name")),
 			),
-			Handler: t.handleCreateArea,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleCreateArea(ctx, req)
+			}),
 		},
 		{
 			Tool: mcp.NewTool("create_tag",
-				mcp.WithDescription("Create a new tag in Things 3."),
+				mcp.WithDescription("Create a tag"),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("name", mcp.Required(), mcp.Description("Tag name")),
 				mcp.WithString("shorthand", mcp.Description("Tag shorthand/abbreviation")),
 				mcp.WithString("parent_uuid", mcp.Description("Parent tag UUID for nesting")),
 			),
-			Handler: t.handleCreateTag,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleCreateTag(ctx, req)
+			}),
 		},
 
 		// --- Modify tools ---
 		{
 			Tool: mcp.NewTool("edit_item",
-				mcp.WithDescription("Edit an existing task or project. Only provided fields are updated."),
+				mcp.WithDescription("Edit a task or project (only provided fields change)"),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("uuid", mcp.Required(), mcp.Description("Task or project UUID")),
 				mcp.WithString("title", mcp.Description("New title")),
 				mcp.WithString("note", mcp.Description("New note")),
-				mcp.WithString("when", mcp.Description("Schedule: today, anytime, someday, inbox"), mcp.Enum("today", "anytime", "someday", "inbox")),
+				mcp.WithString("schedule", mcp.Description("Schedule: today, anytime, someday, inbox"), mcp.Enum("today", "anytime", "someday", "inbox")),
 				mcp.WithString("deadline", mcp.Description("Deadline date (YYYY-MM-DD)")),
 				mcp.WithString("scheduled", mcp.Description("Scheduled date (YYYY-MM-DD)")),
 				mcp.WithString("area_uuid", mcp.Description("Area UUID")),
 				mcp.WithString("project_uuid", mcp.Description("Project UUID")),
 				mcp.WithString("heading_uuid", mcp.Description("Heading UUID")),
 				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs")),
+				mcp.WithString("status", mcp.Description("Set status"), mcp.Enum("pending", "completed", "canceled")),
 			),
-			Handler: t.handleEditTask,
-		},
-		{
-			Tool: mcp.NewTool("complete_item",
-				mcp.WithDescription("Mark a task or project as complete."),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("Task or project UUID")),
-			),
-			Handler: t.handleCompleteTask,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleEditTask(ctx, req)
+			}),
 		},
 		{
 			Tool: mcp.NewTool("trash_item",
-				mcp.WithDescription("Move a task, project, or heading to trash."),
+				mcp.WithDescription("Move an item to trash"),
+				mcp.WithDestructiveHintAnnotation(true),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("uuid", mcp.Required(), mcp.Description("Task, project, or heading UUID")),
 			),
-			Handler: t.handleTrashTask,
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleTrashTask(ctx, req)
+			}),
 		},
-		{
-			Tool: mcp.NewTool("move_to_today",
-				mcp.WithDescription("Move a task or project to Today list."),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("Task or project UUID")),
-			),
-			Handler: t.handleMoveToToday,
-		},
-
 	}
 }
 
@@ -1295,21 +1581,45 @@ func main() {
 	log.SetFlags(log.Ltime | log.Lmsgprefix)
 	log.SetPrefix("[things-mcp] ")
 
-	t, err := NewThingsMCP()
-	if err != nil {
-		log.Fatalf("Failed to initialize: %v", err)
+	um := NewUserManager()
+
+	// Initialize OAuth server
+	jwtSecret := []byte(os.Getenv("JWT_SECRET"))
+	if len(jwtSecret) == 0 {
+		jwtSecret = make([]byte, 32)
+		rand.Read(jwtSecret)
+		log.Printf("No JWT_SECRET env var; generated random secret (tokens won't survive restarts)")
 	}
+	oauth := NewOAuthServer(um, jwtSecret)
+	um.oauth = oauth
+
+	hooks := &server.Hooks{}
+	hooks.AddAfterInitialize(func(ctx context.Context, id any, message *mcp.InitializeRequest, result *mcp.InitializeResult) {
+		result.ServerInfo.Icons = []mcp.Icon{
+			{Src: "https://things-mcp.wenbo.io/favicon.svg", MIMEType: "image/svg+xml"},
+		}
+	})
 
 	mcpServer := server.NewMCPServer(
-		"things-cloud-mcp",
+		"Things Cloud MCP",
 		"1.0.0",
 		server.WithToolCapabilities(false),
+		server.WithHooks(hooks),
+		server.WithInstructions("Things Cloud MCP server for managing Things 3 tasks, projects, areas, and tags. "+
+			"Use list_tasks with filters (area, project, status, tag) to find tasks. "+
+			"Use edit_item to modify any item's title, notes, dates, tags, or status. "+
+			"Use edit_item with status=completed to complete tasks, or status=canceled to cancel them. "+
+			"Use create_task, create_project, create_area, or create_tag to create new items. "+
+			"Use batch_create for creating multiple items at once efficiently. "+
+			"Use move_item to reorganize tasks between projects and areas. "+
+			"All changes sync to Things 3 apps (Mac, iPhone, iPad) in real-time via Things Cloud."),
 	)
-	mcpServer.AddTools(defineTools(t)...)
+	mcpServer.AddTools(defineTools(um)...)
 
 	streamServer := server.NewStreamableHTTPServer(mcpServer,
 		server.WithEndpointPath("/mcp"),
 		server.WithStateLess(true),
+		server.WithHTTPContextFunc(um.httpContextFunc),
 	)
 
 	port := os.Getenv("PORT")
@@ -1333,7 +1643,32 @@ func main() {
 		// This shouldn't be reached since /mcp is handled below, but just in case
 		streamServer.ServeHTTP(w, r)
 	})
-	mux.Handle("/mcp", streamServer)
+
+	// Wrap /mcp handler with 401 WWW-Authenticate for unauthenticated requests
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			base := getBaseURL(r)
+			w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+base+`/.well-known/oauth-protected-resource"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		streamServer.ServeHTTP(w, r)
+	})
+
+	// OAuth 2.1 routes (path-aware per RFC 9728: client appends resource path)
+	mux.HandleFunc("/.well-known/oauth-protected-resource", oauth.handleProtectedResourceMetadata)
+	mux.HandleFunc("/.well-known/oauth-protected-resource/mcp", oauth.handleProtectedResourceMetadata)
+	mux.HandleFunc("/.well-known/oauth-authorization-server", oauth.handleAuthServerMetadata)
+	mux.HandleFunc("/.well-known/oauth-authorization-server/mcp", oauth.handleAuthServerMetadata)
+	mux.HandleFunc("/register", oauth.handleRegister)
+	mux.HandleFunc("/authorize", oauth.handleAuthorize)
+	mux.HandleFunc("/token", oauth.handleToken)
+
+	mux.HandleFunc("/docs", handleDocsPage)
+	mux.HandleFunc("/how-it-works", handleHowItWorksPage)
+	mux.HandleFunc("/favicon.ico", handleFavicon)
+	mux.HandleFunc("/favicon.svg", handleFavicon)
 
 	httpServer := &http.Server{
 		Addr:    addr,
@@ -1343,6 +1678,7 @@ func main() {
 	log.Printf("Things Cloud MCP server listening on %s", addr)
 	log.Printf("  Landing page: http://localhost%s/", addr)
 	log.Printf("  MCP endpoint: http://localhost%s/mcp", addr)
+	log.Printf("  OAuth metadata: http://localhost%s/.well-known/oauth-authorization-server", addr)
 	if err := httpServer.ListenAndServe(); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
