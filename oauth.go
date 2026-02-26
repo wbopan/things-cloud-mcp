@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	thingscloud "github.com/arthursoares/things-cloud-sdk"
+	_ "modernc.org/sqlite"
 )
 
 // ---------------------------------------------------------------------------
@@ -29,17 +31,8 @@ type OAuthServer struct {
 	authCodes     map[string]*AuthCode        // code -> auth code data
 	refreshTokens map[string]*RefreshToken    // token -> refresh data
 	credentials   map[string]string           // email -> password (from successful authorizations)
-	dataFile      string                      // path to persistence JSON file
+	db            *sql.DB                     // SQLite database
 	mu            sync.RWMutex
-}
-
-// persistedState is the on-disk representation of all OAuth state.
-type persistedState struct {
-	JWTSecret     string                     `json:"jwt_secret"`
-	Clients       map[string]*OAuthClient    `json:"clients"`
-	AuthCodes     map[string]*AuthCode       `json:"auth_codes"`
-	RefreshTokens map[string]*RefreshToken   `json:"refresh_tokens"`
-	Credentials   map[string]string          `json:"credentials"`
 }
 
 type OAuthClient struct {
@@ -72,98 +65,122 @@ type RefreshToken struct {
 }
 
 // NewOAuthServer creates a new OAuth server, loading persisted state from dataDir.
-// JWT secret priority: JWT_SECRET env var > persisted > generate new.
+// JWT secret priority: JWT_SECRET env var > DB > generate new.
 func NewOAuthServer(um *UserManager, dataDir string) *OAuthServer {
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		log.Fatalf("Failed to create data directory %s: %v", dataDir, err)
 	}
 
+	dbPath := filepath.Join(dataDir, "oauth.db")
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)")
+	if err != nil {
+		log.Fatalf("Failed to open SQLite database: %v", err)
+	}
+
+	// Create tables
+	for _, ddl := range []string{
+		`CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS clients (
+			client_id TEXT PRIMARY KEY, client_secret TEXT DEFAULT '',
+			client_name TEXT NOT NULL, redirect_uris TEXT NOT NULL,
+			grant_types TEXT NOT NULL, response_types TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS refresh_tokens (
+			token TEXT PRIMARY KEY, email TEXT NOT NULL, password TEXT NOT NULL,
+			client_id TEXT NOT NULL, expires_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS credentials (email TEXT PRIMARY KEY, password TEXT NOT NULL)`,
+	} {
+		if _, err := db.Exec(ddl); err != nil {
+			log.Fatalf("Failed to create table: %v", err)
+		}
+	}
+
 	o := &OAuthServer{
 		um:            um,
-		dataFile:      filepath.Join(dataDir, "oauth_state.json"),
+		db:            db,
 		clients:       make(map[string]*OAuthClient),
 		authCodes:     make(map[string]*AuthCode),
 		refreshTokens: make(map[string]*RefreshToken),
 		credentials:   make(map[string]string),
 	}
 
-	// Load persisted state
-	if data, err := os.ReadFile(o.dataFile); err == nil {
-		var state persistedState
-		if err := json.Unmarshal(data, &state); err == nil {
-			if state.JWTSecret != "" {
-				if secret, err := base64.RawURLEncoding.DecodeString(state.JWTSecret); err == nil {
-					o.jwtSecret = secret
-				}
-			}
-			if state.Clients != nil {
-				o.clients = state.Clients
-			}
-			if state.AuthCodes != nil {
-				o.authCodes = state.AuthCodes
-			}
-			if state.RefreshTokens != nil {
-				o.refreshTokens = state.RefreshTokens
-			}
-			if state.Credentials != nil {
-				o.credentials = state.Credentials
-			}
-			log.Printf("Loaded OAuth state: %d clients, %d refresh tokens, %d users",
-				len(o.clients), len(o.refreshTokens), len(o.credentials))
-		} else {
-			log.Printf("Warning: failed to parse %s: %v", o.dataFile, err)
-		}
-	}
-
-	// JWT secret: env var takes priority over persisted
+	// Load JWT secret: env > DB > generate
 	if envSecret := os.Getenv("JWT_SECRET"); envSecret != "" {
 		o.jwtSecret = []byte(envSecret)
+	} else {
+		var dbSecret string
+		if err := db.QueryRow(`SELECT value FROM kv WHERE key='jwt_secret'`).Scan(&dbSecret); err == nil {
+			if secret, err := base64.RawURLEncoding.DecodeString(dbSecret); err == nil {
+				o.jwtSecret = secret
+			}
+		}
 	}
 	if len(o.jwtSecret) == 0 {
 		o.jwtSecret = make([]byte, 32)
 		rand.Read(o.jwtSecret)
 		log.Printf("Generated new JWT secret (will be persisted)")
 	}
+	db.Exec(`INSERT OR REPLACE INTO kv (key, value) VALUES ('jwt_secret', ?)`,
+		base64.RawURLEncoding.EncodeToString(o.jwtSecret))
 
-	// Clean expired entries
+	// Load clients
+	rows, err := db.Query(`SELECT client_id, client_secret, client_name, redirect_uris, grant_types, response_types, created_at FROM clients`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var c OAuthClient
+			var redirectURIs, grantTypes, responseTypes, createdAt string
+			if err := rows.Scan(&c.ClientID, &c.ClientSecret, &c.ClientName, &redirectURIs, &grantTypes, &responseTypes, &createdAt); err != nil {
+				continue
+			}
+			json.Unmarshal([]byte(redirectURIs), &c.RedirectURIs)
+			json.Unmarshal([]byte(grantTypes), &c.GrantTypes)
+			json.Unmarshal([]byte(responseTypes), &c.ResponseTypes)
+			c.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+			o.clients[c.ClientID] = &c
+		}
+	}
+
+	// Load refresh tokens (skip expired)
 	now := time.Now()
-	for k, v := range o.authCodes {
-		if now.After(v.ExpiresAt) {
-			delete(o.authCodes, k)
+	rows2, err := db.Query(`SELECT token, email, password, client_id, expires_at FROM refresh_tokens`)
+	if err == nil {
+		defer rows2.Close()
+		for rows2.Next() {
+			var rt RefreshToken
+			var expiresAt string
+			if err := rows2.Scan(&rt.Token, &rt.Email, &rt.Password, &rt.ClientID, &expiresAt); err != nil {
+				continue
+			}
+			rt.ExpiresAt, _ = time.Parse(time.RFC3339, expiresAt)
+			if now.After(rt.ExpiresAt) {
+				continue
+			}
+			o.refreshTokens[rt.Token] = &rt
 		}
 	}
-	for k, v := range o.refreshTokens {
-		if now.After(v.ExpiresAt) {
-			delete(o.refreshTokens, k)
+	// Clean expired from DB
+	db.Exec(`DELETE FROM refresh_tokens WHERE expires_at < ?`, now.Format(time.RFC3339))
+
+	// Load credentials
+	rows3, err := db.Query(`SELECT email, password FROM credentials`)
+	if err == nil {
+		defer rows3.Close()
+		for rows3.Next() {
+			var email, password string
+			if err := rows3.Scan(&email, &password); err != nil {
+				continue
+			}
+			o.credentials[email] = password
 		}
 	}
 
-	o.save()
+	log.Printf("Loaded OAuth state: %d clients, %d refresh tokens, %d users",
+		len(o.clients), len(o.refreshTokens), len(o.credentials))
+
 	return o
-}
-
-// save persists the current OAuth state to disk. Must be called with o.mu held.
-func (o *OAuthServer) save() {
-	state := persistedState{
-		JWTSecret:     base64.RawURLEncoding.EncodeToString(o.jwtSecret),
-		Clients:       o.clients,
-		AuthCodes:     o.authCodes,
-		RefreshTokens: o.refreshTokens,
-		Credentials:   o.credentials,
-	}
-	data, err := json.MarshalIndent(state, "", "  ")
-	if err != nil {
-		log.Printf("Warning: failed to marshal OAuth state: %v", err)
-		return
-	}
-	tmp := o.dataFile + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		log.Printf("Warning: failed to write OAuth state: %v", err)
-		return
-	}
-	if err := os.Rename(tmp, o.dataFile); err != nil {
-		log.Printf("Warning: failed to rename OAuth state file: %v", err)
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -373,8 +390,15 @@ func (o *OAuthServer) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	o.mu.Lock()
 	o.clients[clientID] = client
-	o.save()
 	o.mu.Unlock()
+
+	redirectURIsJSON, _ := json.Marshal(client.RedirectURIs)
+	grantTypesJSON, _ := json.Marshal(client.GrantTypes)
+	responseTypesJSON, _ := json.Marshal(client.ResponseTypes)
+	o.db.Exec(`INSERT INTO clients VALUES(?,?,?,?,?,?,?)`,
+		clientID, client.ClientSecret, client.ClientName,
+		string(redirectURIsJSON), string(grantTypesJSON), string(responseTypesJSON),
+		client.CreatedAt.Format(time.RFC3339))
 
 	log.Printf("OAuth: registered client %q (id=%s)", req.ClientName, clientID)
 
@@ -507,8 +531,9 @@ func (o *OAuthServer) handleAuthorizePost(w http.ResponseWriter, r *http.Request
 	o.mu.Lock()
 	o.authCodes[code] = authCode
 	o.credentials[email] = password
-	o.save()
 	o.mu.Unlock()
+
+	o.db.Exec(`INSERT OR REPLACE INTO credentials (email, password) VALUES (?, ?)`, email, password)
 
 	log.Printf("OAuth: auth code issued for %s (client=%s)", email, clientID)
 
@@ -670,8 +695,9 @@ func (o *OAuthServer) handleAuthCodeGrant(w http.ResponseWriter, r *http.Request
 
 	// Store credentials for Bearer token resolution
 	o.credentials[email] = password
-	o.save()
 	o.mu.Unlock()
+
+	o.db.Exec(`INSERT OR REPLACE INTO credentials (email, password) VALUES (?, ?)`, email, password)
 
 	// Generate tokens
 	base := getBaseURL(r)
@@ -688,16 +714,19 @@ func (o *OAuthServer) handleAuthCodeGrant(w http.ResponseWriter, r *http.Request
 	}
 
 	refreshTok := randomString(32)
-	o.mu.Lock()
-	o.refreshTokens[refreshTok] = &RefreshToken{
+	rt := &RefreshToken{
 		Token:     refreshTok,
 		Email:     email,
 		Password:  password,
 		ClientID:  clientID,
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour), // 30 days
 	}
-	o.save()
+	o.mu.Lock()
+	o.refreshTokens[refreshTok] = rt
 	o.mu.Unlock()
+
+	o.db.Exec(`INSERT INTO refresh_tokens VALUES(?,?,?,?,?)`,
+		rt.Token, rt.Email, rt.Password, rt.ClientID, rt.ExpiresAt.Format(time.RFC3339))
 
 	log.Printf("OAuth: tokens issued for %s", email)
 
@@ -727,8 +756,8 @@ func (o *OAuthServer) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Req
 	}
 	if time.Now().After(rt.ExpiresAt) {
 		delete(o.refreshTokens, refreshTok)
-		o.save()
 		o.mu.Unlock()
+		o.db.Exec(`DELETE FROM refresh_tokens WHERE token=?`, refreshTok)
 		writeJSONError(w, http.StatusBadRequest, "invalid_grant", "refresh token expired")
 		return
 	}
@@ -742,8 +771,10 @@ func (o *OAuthServer) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Req
 
 	// Store credentials
 	o.credentials[email] = password
-	o.save()
 	o.mu.Unlock()
+
+	o.db.Exec(`DELETE FROM refresh_tokens WHERE token=?`, refreshTok)
+	o.db.Exec(`INSERT OR REPLACE INTO credentials (email, password) VALUES (?, ?)`, email, password)
 
 	// Generate new tokens
 	base := getBaseURL(r)
@@ -760,16 +791,19 @@ func (o *OAuthServer) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Req
 	}
 
 	newRefreshTok := randomString(32)
-	o.mu.Lock()
-	o.refreshTokens[newRefreshTok] = &RefreshToken{
+	newRT := &RefreshToken{
 		Token:     newRefreshTok,
 		Email:     email,
 		Password:  password,
 		ClientID:  clientID,
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
 	}
-	o.save()
+	o.mu.Lock()
+	o.refreshTokens[newRefreshTok] = newRT
 	o.mu.Unlock()
+
+	o.db.Exec(`INSERT INTO refresh_tokens VALUES(?,?,?,?,?)`,
+		newRT.Token, newRT.Email, newRT.Password, newRT.ClientID, newRT.ExpiresAt.Format(time.RFC3339))
 
 	log.Printf("OAuth: tokens refreshed for %s", email)
 
