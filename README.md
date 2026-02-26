@@ -2,7 +2,7 @@
 
 An MCP server that connects AI assistants to Things 3 via Things Cloud.
 
-**Public endpoint: https://thingscloudmcp.com/mcp**
+**Public endpoint: https://thingscloudmcp.com**
 
 Add this URL to your MCP client and start managing Things 3 tasks with AI. Multi-user — each user authenticates with their own Things Cloud credentials.
 
