@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -2160,14 +2159,12 @@ func main() {
 
 	um := NewUserManager()
 
-	// Initialize OAuth server
-	jwtSecret := []byte(os.Getenv("JWT_SECRET"))
-	if len(jwtSecret) == 0 {
-		jwtSecret = make([]byte, 32)
-		rand.Read(jwtSecret)
-		log.Printf("No JWT_SECRET env var; generated random secret (tokens won't survive restarts)")
+	// Initialize OAuth server with persistent state
+	dataDir := os.Getenv("DATA_DIR")
+	if dataDir == "" {
+		dataDir = "data"
 	}
-	oauth := NewOAuthServer(um, jwtSecret)
+	oauth := NewOAuthServer(um, dataDir)
 	um.oauth = oauth
 
 	hooks := &server.Hooks{}

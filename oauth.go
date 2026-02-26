@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -27,7 +29,17 @@ type OAuthServer struct {
 	authCodes     map[string]*AuthCode        // code -> auth code data
 	refreshTokens map[string]*RefreshToken    // token -> refresh data
 	credentials   map[string]string           // email -> password (from successful authorizations)
+	dataFile      string                      // path to persistence JSON file
 	mu            sync.RWMutex
+}
+
+// persistedState is the on-disk representation of all OAuth state.
+type persistedState struct {
+	JWTSecret     string                     `json:"jwt_secret"`
+	Clients       map[string]*OAuthClient    `json:"clients"`
+	AuthCodes     map[string]*AuthCode       `json:"auth_codes"`
+	RefreshTokens map[string]*RefreshToken   `json:"refresh_tokens"`
+	Credentials   map[string]string          `json:"credentials"`
 }
 
 type OAuthClient struct {
@@ -59,15 +71,98 @@ type RefreshToken struct {
 	ExpiresAt time.Time
 }
 
-// NewOAuthServer creates a new OAuth server with the given UserManager and JWT secret.
-func NewOAuthServer(um *UserManager, jwtSecret []byte) *OAuthServer {
-	return &OAuthServer{
+// NewOAuthServer creates a new OAuth server, loading persisted state from dataDir.
+// JWT secret priority: JWT_SECRET env var > persisted > generate new.
+func NewOAuthServer(um *UserManager, dataDir string) *OAuthServer {
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		log.Fatalf("Failed to create data directory %s: %v", dataDir, err)
+	}
+
+	o := &OAuthServer{
 		um:            um,
-		jwtSecret:     jwtSecret,
+		dataFile:      filepath.Join(dataDir, "oauth_state.json"),
 		clients:       make(map[string]*OAuthClient),
 		authCodes:     make(map[string]*AuthCode),
 		refreshTokens: make(map[string]*RefreshToken),
 		credentials:   make(map[string]string),
+	}
+
+	// Load persisted state
+	if data, err := os.ReadFile(o.dataFile); err == nil {
+		var state persistedState
+		if err := json.Unmarshal(data, &state); err == nil {
+			if state.JWTSecret != "" {
+				if secret, err := base64.RawURLEncoding.DecodeString(state.JWTSecret); err == nil {
+					o.jwtSecret = secret
+				}
+			}
+			if state.Clients != nil {
+				o.clients = state.Clients
+			}
+			if state.AuthCodes != nil {
+				o.authCodes = state.AuthCodes
+			}
+			if state.RefreshTokens != nil {
+				o.refreshTokens = state.RefreshTokens
+			}
+			if state.Credentials != nil {
+				o.credentials = state.Credentials
+			}
+			log.Printf("Loaded OAuth state: %d clients, %d refresh tokens, %d users",
+				len(o.clients), len(o.refreshTokens), len(o.credentials))
+		} else {
+			log.Printf("Warning: failed to parse %s: %v", o.dataFile, err)
+		}
+	}
+
+	// JWT secret: env var takes priority over persisted
+	if envSecret := os.Getenv("JWT_SECRET"); envSecret != "" {
+		o.jwtSecret = []byte(envSecret)
+	}
+	if len(o.jwtSecret) == 0 {
+		o.jwtSecret = make([]byte, 32)
+		rand.Read(o.jwtSecret)
+		log.Printf("Generated new JWT secret (will be persisted)")
+	}
+
+	// Clean expired entries
+	now := time.Now()
+	for k, v := range o.authCodes {
+		if now.After(v.ExpiresAt) {
+			delete(o.authCodes, k)
+		}
+	}
+	for k, v := range o.refreshTokens {
+		if now.After(v.ExpiresAt) {
+			delete(o.refreshTokens, k)
+		}
+	}
+
+	o.save()
+	return o
+}
+
+// save persists the current OAuth state to disk. Must be called with o.mu held.
+func (o *OAuthServer) save() {
+	state := persistedState{
+		JWTSecret:     base64.RawURLEncoding.EncodeToString(o.jwtSecret),
+		Clients:       o.clients,
+		AuthCodes:     o.authCodes,
+		RefreshTokens: o.refreshTokens,
+		Credentials:   o.credentials,
+	}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		log.Printf("Warning: failed to marshal OAuth state: %v", err)
+		return
+	}
+	tmp := o.dataFile + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		log.Printf("Warning: failed to write OAuth state: %v", err)
+		return
+	}
+	if err := os.Rename(tmp, o.dataFile); err != nil {
+		log.Printf("Warning: failed to rename OAuth state file: %v", err)
 	}
 }
 
@@ -278,6 +373,7 @@ func (o *OAuthServer) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	o.mu.Lock()
 	o.clients[clientID] = client
+	o.save()
 	o.mu.Unlock()
 
 	log.Printf("OAuth: registered client %q (id=%s)", req.ClientName, clientID)
@@ -411,6 +507,7 @@ func (o *OAuthServer) handleAuthorizePost(w http.ResponseWriter, r *http.Request
 	o.mu.Lock()
 	o.authCodes[code] = authCode
 	o.credentials[email] = password
+	o.save()
 	o.mu.Unlock()
 
 	log.Printf("OAuth: auth code issued for %s (client=%s)", email, clientID)
@@ -573,6 +670,7 @@ func (o *OAuthServer) handleAuthCodeGrant(w http.ResponseWriter, r *http.Request
 
 	// Store credentials for Bearer token resolution
 	o.credentials[email] = password
+	o.save()
 	o.mu.Unlock()
 
 	// Generate tokens
@@ -598,6 +696,7 @@ func (o *OAuthServer) handleAuthCodeGrant(w http.ResponseWriter, r *http.Request
 		ClientID:  clientID,
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour), // 30 days
 	}
+	o.save()
 	o.mu.Unlock()
 
 	log.Printf("OAuth: tokens issued for %s", email)
@@ -628,6 +727,7 @@ func (o *OAuthServer) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Req
 	}
 	if time.Now().After(rt.ExpiresAt) {
 		delete(o.refreshTokens, refreshTok)
+		o.save()
 		o.mu.Unlock()
 		writeJSONError(w, http.StatusBadRequest, "invalid_grant", "refresh token expired")
 		return
@@ -642,6 +742,7 @@ func (o *OAuthServer) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Req
 
 	// Store credentials
 	o.credentials[email] = password
+	o.save()
 	o.mu.Unlock()
 
 	// Generate new tokens
@@ -667,6 +768,7 @@ func (o *OAuthServer) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Req
 		ClientID:  clientID,
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
 	}
+	o.save()
 	o.mu.Unlock()
 
 	log.Printf("OAuth: tokens refreshed for %s", email)
