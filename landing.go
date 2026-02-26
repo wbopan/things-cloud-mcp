@@ -1,6 +1,10 @@
 package main
 
-import "net/http"
+import (
+	"encoding/base64"
+	"net/http"
+	"strings"
+)
 
 // sharedCSS contains the CSS shared between the landing page and docs page.
 const sharedCSS = `*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -438,6 +442,7 @@ var LandingPageHTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.ico">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>Things Cloud MCP</title>
 <style>
@@ -621,6 +626,7 @@ var DocsPageHTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.ico">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>Documentation - Things Cloud MCP</title>
 <style>
@@ -1153,6 +1159,7 @@ var HowItWorksPageHTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.ico">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>How it Works - Things Cloud MCP</title>
 <style>
@@ -1434,8 +1441,24 @@ const faviconSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" 
   <polyline points="24,34 30,40 42,28" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>`
 
+// faviconPNG is a base64-encoded 32x32 PNG of a blue cloud with white checkmark.
+const faviconPNG = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABHUlEQVR4nGJiGGAw6oABdwALOZqkan7+xyb+rIWdkVSzSNKAy2JKHEJ0FBBrOalqiXIAKQaSqmfAEyFBB5Dje1L04nUAuZZXuzEzPG1mA+Oph/7gNQNnaqXE8ixbZhQx6dpfOHMG1hCgpuWEzMRwALUtn3b4L16zmWhteeuuvwz47CCYC5ATFIhNieXYAEEHIBsOYiM7glLLGcipjNAdRInlDMSEAHIiQraYGpYT5QCQgdgcQQ3LMRyAq7Ag5AhSLEe3g+jKCJcjyPU5yQ6AOeL8439wPohNieUM5OQCn1l/KLIQHWCEADntOmIBNrMHZ4OEFqGAy0yCFlHSIsJnMdEOINchxIYi0WmAlGghRS1ZcU3NntGAA0AAAAD//8S3oe5VGX2KAAAAAElFTkSuQmCC"
+
 func handleFavicon(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "image/svg+xml")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
-	w.Write([]byte(faviconSVG))
+
+	if strings.HasSuffix(r.URL.Path, ".svg") {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Write([]byte(faviconSVG))
+		return
+	}
+
+	// For /favicon.ico and any .png request, serve the PNG version.
+	pngData, err := base64.StdEncoding.DecodeString(faviconPNG)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Write(pngData)
 }
