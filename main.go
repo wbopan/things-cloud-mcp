@@ -1648,6 +1648,10 @@ func (t *ThingsMCP) handleEditTask(_ context.Context, req mcp.CallToolRequest) (
 		case "pending":
 			u.Status(0)
 			u.fields["sp"] = nil
+		case "trashed":
+			u.Trash(true)
+		case "restored":
+			u.Trash(false)
 		}
 	}
 
@@ -1659,39 +1663,6 @@ func (t *ThingsMCP) handleEditTask(_ context.Context, req mcp.CallToolRequest) (
 }
 
 
-func (t *ThingsMCP) handleTrashTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	taskUUID, err := req.RequireString("uuid")
-	if err != nil {
-		return errResult("uuid is required"), nil
-	}
-
-	if err := t.validateTaskUUID(taskUUID); err != nil {
-		return errResult(err.Error()), nil
-	}
-
-	u := newTaskUpdate().Trash(true)
-	env := writeEnvelope{id: taskUUID, action: 1, kind: "Task6", payload: u.build()}
-
-	if err := t.writeAndSync(env); err != nil {
-		return errResult(fmt.Sprintf("trash task: %v", err)), nil
-	}
-	return jsonResult(map[string]string{"status": "trashed", "uuid": taskUUID}), nil
-}
-
-func (t *ThingsMCP) handleRestoreTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	taskUUID, err := req.RequireString("uuid")
-	if err != nil {
-		return errResult("uuid is required"), nil
-	}
-
-	u := newTaskUpdate().Trash(false)
-	env := writeEnvelope{id: taskUUID, action: 1, kind: "Task6", payload: u.build()}
-
-	if err := t.writeAndSync(env); err != nil {
-		return errResult(fmt.Sprintf("restore item: %v", err)), nil
-	}
-	return jsonResult(map[string]string{"status": "restored", "uuid": taskUUID}), nil
-}
 
 // ---------------------------------------------------------------------------
 // Checklist item operations
@@ -1739,41 +1710,21 @@ func (t *ThingsMCP) handleEditChecklistItem(_ context.Context, req mcp.CallToolR
 	if ix := req.GetInt("index", -1); ix >= 0 {
 		payload["ix"] = ix
 	}
+	if completed, ok := req.GetArguments()["completed"]; ok {
+		if b, _ := completed.(bool); b {
+			payload["ss"] = 3
+			payload["sp"] = nowTs()
+		} else {
+			payload["ss"] = 0
+			payload["sp"] = nil
+		}
+	}
 
 	env := writeEnvelope{id: itemUUID, action: 1, kind: "ChecklistItem3", payload: payload}
 	if err := t.writeAndSync(env); err != nil {
 		return errResult(fmt.Sprintf("edit checklist item: %v", err)), nil
 	}
 	return jsonResult(map[string]string{"status": "updated", "uuid": itemUUID}), nil
-}
-
-func (t *ThingsMCP) handleCompleteChecklistItem(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	itemUUID, err := req.RequireString("uuid")
-	if err != nil {
-		return errResult("uuid is required"), nil
-	}
-
-	uncomplete := req.GetBool("uncomplete", false)
-	payload := map[string]any{"md": nowTs()}
-
-	if uncomplete {
-		payload["ss"] = 0
-		payload["sp"] = nil
-	} else {
-		payload["ss"] = 3
-		payload["sp"] = nowTs()
-	}
-
-	env := writeEnvelope{id: itemUUID, action: 1, kind: "ChecklistItem3", payload: payload}
-	if err := t.writeAndSync(env); err != nil {
-		return errResult(fmt.Sprintf("complete checklist item: %v", err)), nil
-	}
-
-	status := "completed"
-	if uncomplete {
-		status = "uncompleted"
-	}
-	return jsonResult(map[string]string{"status": status, "uuid": itemUUID}), nil
 }
 
 func (t *ThingsMCP) handleDeleteChecklistItem(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -2062,34 +2013,10 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("reminder_date", mcp.Description("Reminder date (YYYY-MM-DD), or \"none\" to clear. Must be used with reminder_time.")),
 				mcp.WithString("reminder_time", mcp.Description("Reminder time (HH:MM 24h). Must be used with reminder_date.")),
 				mcp.WithString("recurrence", mcp.Description("Recurrence rule: daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days, every N weeks. Use \"none\" to clear.")),
-				mcp.WithString("status", mcp.Description("Set status"), mcp.Enum("pending", "completed", "canceled")),
+				mcp.WithString("status", mcp.Description("Set status: pending, completed, canceled, trashed (move to trash), restored (restore from trash)"), mcp.Enum("pending", "completed", "canceled", "trashed", "restored")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleEditTask(ctx, req)
-			}),
-		},
-		{
-			Tool: mcp.NewTool("trash_item",
-				mcp.WithDescription("Move an item to trash"),
-				mcp.WithDestructiveHintAnnotation(true),
-				mcp.WithIdempotentHintAnnotation(true),
-				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("Task, project, or heading UUID")),
-			),
-			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-				return t.handleTrashTask(ctx, req)
-			}),
-		},
-		{
-			Tool: mcp.NewTool("restore_item",
-				mcp.WithDescription("Restore an item from trash"),
-				mcp.WithDestructiveHintAnnotation(false),
-				mcp.WithIdempotentHintAnnotation(true),
-				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("Task, project, or heading UUID")),
-			),
-			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-				return t.handleRestoreTask(ctx, req)
 			}),
 		},
 
@@ -2116,22 +2043,10 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("uuid", mcp.Required(), mcp.Description("Checklist item UUID")),
 				mcp.WithString("title", mcp.Description("New title")),
 				mcp.WithNumber("index", mcp.Description("New sort position")),
+				mcp.WithBoolean("completed", mcp.Description("Set true to complete, false to uncomplete")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleEditChecklistItem(ctx, req)
-			}),
-		},
-		{
-			Tool: mcp.NewTool("complete_checklist_item",
-				mcp.WithDescription("Complete or uncomplete a checklist item"),
-				mcp.WithDestructiveHintAnnotation(false),
-				mcp.WithIdempotentHintAnnotation(true),
-				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("Checklist item UUID")),
-				mcp.WithBoolean("uncomplete", mcp.Description("Set true to mark as pending instead (default false)")),
-			),
-			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-				return t.handleCompleteChecklistItem(ctx, req)
 			}),
 		},
 		{
