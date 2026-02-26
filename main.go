@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -159,12 +160,149 @@ func todayMidnightUTC() int64 {
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Unix()
 }
 
+// ---------------------------------------------------------------------------
+// Recurrence parser: user-friendly string → wire-format JSON
+// ---------------------------------------------------------------------------
+
+func parseRecurrence(s string) (*json.RawMessage, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" || s == "none" {
+		return nil, nil
+	}
+
+	today := todayMidnightUTC()
+	base := map[string]any{
+		"rrv": 4,
+		"tp":  0,
+		"rc":  0,
+		"ts":  0,
+		"ed":  64092211200,
+		"ia":  today,
+		"sr":  today,
+	}
+
+	switch {
+	case s == "daily":
+		base["fu"] = 16
+		base["fa"] = 1
+		base["of"] = []map[string]any{{"dy": 0}}
+
+	case strings.HasPrefix(s, "every ") && strings.HasSuffix(s, " days"):
+		numStr := strings.TrimSuffix(strings.TrimPrefix(s, "every "), " days")
+		n, err := strconv.Atoi(numStr)
+		if err != nil || n < 1 {
+			return nil, fmt.Errorf("invalid recurrence: %s", s)
+		}
+		base["fu"] = 16
+		base["fa"] = n
+		base["of"] = []map[string]any{{"dy": 0}}
+
+	case s == "weekly":
+		base["fu"] = 256
+		base["fa"] = 1
+		base["of"] = []map[string]any{{"dy": 0}}
+
+	case strings.HasPrefix(s, "weekly:"):
+		dayStr := strings.TrimPrefix(s, "weekly:")
+		days, err := parseWeekdays(dayStr)
+		if err != nil {
+			return nil, err
+		}
+		base["fu"] = 256
+		base["fa"] = 1
+		base["of"] = days
+
+	case strings.HasPrefix(s, "every ") && strings.HasSuffix(s, " weeks"):
+		numStr := strings.TrimSuffix(strings.TrimPrefix(s, "every "), " weeks")
+		n, err := strconv.Atoi(numStr)
+		if err != nil || n < 1 {
+			return nil, fmt.Errorf("invalid recurrence: %s", s)
+		}
+		base["fu"] = 256
+		base["fa"] = n
+		base["of"] = []map[string]any{{"dy": 0}}
+
+	case s == "monthly":
+		base["fu"] = 8
+		base["fa"] = 1
+		base["of"] = []map[string]any{{"dy": 0}}
+
+	case strings.HasPrefix(s, "monthly:"):
+		detail := strings.TrimPrefix(s, "monthly:")
+		if detail == "last" {
+			base["fu"] = 8
+			base["fa"] = 1
+			base["of"] = []map[string]any{{"dy": -1}}
+		} else {
+			day, err := strconv.Atoi(detail)
+			if err != nil || day < 1 || day > 31 {
+				return nil, fmt.Errorf("invalid monthly day: %s", detail)
+			}
+			base["fu"] = 8
+			base["fa"] = 1
+			base["of"] = []map[string]any{{"dy": day - 1}}
+		}
+
+	case s == "yearly":
+		base["fu"] = 4
+		base["fa"] = 1
+		base["of"] = []map[string]any{{"dy": 0, "mo": 0}}
+
+	default:
+		return nil, fmt.Errorf("unsupported recurrence format: %s (try: daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days, every N weeks)", s)
+	}
+
+	raw, err := json.Marshal(base)
+	if err != nil {
+		return nil, err
+	}
+	msg := json.RawMessage(raw)
+	return &msg, nil
+}
+
+func parseWeekdays(s string) ([]map[string]any, error) {
+	dayMap := map[string]int{
+		"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6,
+	}
+	parts := strings.Split(s, ",")
+	var result []map[string]any
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		wd, ok := dayMap[p]
+		if !ok {
+			return nil, fmt.Errorf("unknown weekday: %s (use: sun,mon,tue,wed,thu,fri,sat)", p)
+		}
+		result = append(result, map[string]any{"wd": wd})
+	}
+	if len(result) == 0 {
+		return nil, fmt.Errorf("no weekdays specified")
+	}
+	return result, nil
+}
+
 func parseDate(s string) *time.Time {
 	t, err := time.Parse("2006-01-02", s)
 	if err != nil {
 		return nil
 	}
 	return &t
+}
+
+func parseTime(s string) (int, bool) {
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return 0, false
+	}
+	h, err1 := strconv.Atoi(parts[0])
+	m, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+		return 0, false
+	}
+	return h*3600 + m*60, true
+}
+
+func offsetToTime(secs int) string {
+	return fmt.Sprintf("%02d:%02d", secs/3600, (secs%3600)/60)
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +326,7 @@ func newTaskCreatePayload(title string, opts map[string]string) TaskCreatePayloa
 		switch v {
 		case "project":
 			tp = 1
+			st = 1
 		case "heading":
 			tp = 2
 			st = 1
@@ -249,14 +388,39 @@ func newTaskCreatePayload(title string, opts map[string]string) TaskCreatePayloa
 		tg = strings.Split(v, ",")
 	}
 
+	var rmd *int64
+	var ato *int
+	if rmdStr, ok := opts["reminder_date"]; ok {
+		if timeStr, ok2 := opts["reminder_time"]; ok2 {
+			if dt := parseDate(rmdStr); dt != nil {
+				if offset, valid := parseTime(timeStr); valid {
+					ts := dt.Unix()
+					rmd = &ts
+					ato = &offset
+				}
+			}
+		}
+	}
+
+	var rr *json.RawMessage
+	var icsd *int64
+	if v, ok := opts["recurrence"]; ok && v != "" {
+		parsed, err := parseRecurrence(v)
+		if err == nil && parsed != nil {
+			rr = parsed
+			today := todayMidnightUTC()
+			icsd = &today
+		}
+	}
+
 	return TaskCreatePayload{
-		Tp: tp, Sr: sr, Dds: nil, Rt: []string{}, Rmd: nil,
+		Tp: tp, Sr: sr, Dds: nil, Rt: []string{}, Rmd: rmd,
 		Ss: 0, Tr: false, Dl: []string{}, Icp: false, St: st,
 		Ar: ar, Tt: title, Do: 0, Lai: nil, Tir: tir,
 		Tg: tg, Agr: agr, Ix: 0, Cd: now, Lt: false,
-		Icc: 0, Md: nil, Ti: 0, Dd: dd, Ato: nil,
-		Nt: nt, Icsd: nil, Pr: pr, Rp: nil, Acrd: nil,
-		Sp: nil, Sb: 0, Rr: nil, Xx: defaultExtension(),
+		Icc: 0, Md: nil, Ti: 0, Dd: dd, Ato: ato,
+		Nt: nt, Icsd: icsd, Pr: pr, Rp: nil, Acrd: nil,
+		Sp: nil, Sb: 0, Rr: rr, Xx: defaultExtension(),
 	}
 }
 
@@ -279,6 +443,9 @@ func (u *taskUpdate) Status(ss int) *taskUpdate         { u.fields["ss"] = ss; r
 func (u *taskUpdate) StopDate(ts float64) *taskUpdate   { u.fields["sp"] = ts; return u }
 func (u *taskUpdate) Trash(b bool) *taskUpdate          { u.fields["tr"] = b; return u }
 func (u *taskUpdate) Deadline(dd int64) *taskUpdate     { u.fields["dd"] = dd; return u }
+func (u *taskUpdate) Reminder(rmd int64) *taskUpdate    { u.fields["rmd"] = rmd; return u }
+func (u *taskUpdate) AlarmOffset(ato int) *taskUpdate   { u.fields["ato"] = ato; return u }
+func (u *taskUpdate) ClearReminder() *taskUpdate        { u.fields["rmd"] = nil; u.fields["ato"] = nil; return u }
 func (u *taskUpdate) Scheduled(sr, tir int64) *taskUpdate {
 	u.fields["sr"] = sr
 	u.fields["tir"] = tir
@@ -294,6 +461,19 @@ func (u *taskUpdate) Schedule(st int, sr, tir any) *taskUpdate {
 	u.fields["tir"] = tir
 	return u
 }
+func (u *taskUpdate) Recurrence(rr json.RawMessage) *taskUpdate {
+	u.fields["rr"] = rr
+	return u
+}
+func (u *taskUpdate) ClearRecurrence() *taskUpdate {
+	u.fields["rr"] = nil
+	u.fields["icsd"] = nil
+	return u
+}
+func (u *taskUpdate) InstanceCreationStartDate(icsd int64) *taskUpdate {
+	u.fields["icsd"] = icsd
+	return u
+}
 func (u *taskUpdate) build() map[string]any { return u.fields }
 
 // ---------------------------------------------------------------------------
@@ -306,16 +486,21 @@ type Ref struct {
 }
 
 type TaskOutput struct {
-	UUID          string  `json:"uuid"`
-	Title         string  `json:"title"`
-	Note          string  `json:"note,omitempty"`
-	Status        string  `json:"status"`
-	Schedule      string  `json:"schedule"`
-	ScheduledDate *string `json:"scheduledDate,omitempty"`
-	DeadlineDate  *string `json:"deadlineDate,omitempty"`
-	Areas         []Ref   `json:"areas,omitempty"`
-	Project       *Ref    `json:"project,omitempty"`
-	Tags          []Ref   `json:"tags,omitempty"`
+	UUID             string  `json:"uuid"`
+	Title            string  `json:"title"`
+	Note             string  `json:"note,omitempty"`
+	Status           string  `json:"status"`
+	Schedule         string  `json:"schedule"`
+	ScheduledDate    *string `json:"scheduledDate,omitempty"`
+	DeadlineDate     *string `json:"deadlineDate,omitempty"`
+	ReminderTime     *string `json:"reminderTime,omitempty"`
+	Recurrence       *string `json:"recurrence,omitempty"`
+	CreationDate     *string `json:"creationDate,omitempty"`
+	ModificationDate *string `json:"modificationDate,omitempty"`
+	CompletionDate   *string `json:"completionDate,omitempty"`
+	Areas            []Ref   `json:"areas,omitempty"`
+	Project          *Ref    `json:"project,omitempty"`
+	Tags             []Ref   `json:"tags,omitempty"`
 }
 
 type ChecklistOutput struct {
@@ -375,6 +560,27 @@ func (t *ThingsMCP) taskToOutput(task *thingscloud.Task) TaskOutput {
 	if task.DeadlineDate != nil && task.DeadlineDate.Year() > 1970 {
 		s := task.DeadlineDate.Format("2006-01-02")
 		out.DeadlineDate = &s
+	}
+	if task.AlarmTimeOffset != nil {
+		s := offsetToTime(*task.AlarmTimeOffset)
+		out.ReminderTime = &s
+	}
+	if len(task.RecurrenceIDs) > 0 {
+		s := "recurring"
+		out.Recurrence = &s
+	}
+	const isoFormat = "2006-01-02T15:04:05Z"
+	if !task.CreationDate.IsZero() && task.CreationDate.Year() > 1970 {
+		s := task.CreationDate.UTC().Format(isoFormat)
+		out.CreationDate = &s
+	}
+	if task.ModificationDate != nil && task.ModificationDate.Year() > 1970 {
+		s := task.ModificationDate.UTC().Format(isoFormat)
+		out.ModificationDate = &s
+	}
+	if task.CompletionDate != nil && task.CompletionDate.Year() > 1970 {
+		s := task.CompletionDate.UTC().Format(isoFormat)
+		out.CompletionDate = &s
 	}
 	for _, areaID := range task.AreaIDs {
 		if area, ok := state.Areas[areaID]; ok {
@@ -686,6 +892,16 @@ func (t *ThingsMCP) validateAreaUUID(uuid string) error {
 		}
 	}
 	return fmt.Errorf("area not found: %s", uuid)
+}
+
+func (t *ThingsMCP) validateTagUUID(uuid string) error {
+	state := t.getState()
+	for _, tag := range state.Tags {
+		if tag.UUID == uuid {
+			return nil
+		}
+	}
+	return fmt.Errorf("tag not found: %s", uuid)
 }
 
 func (t *ThingsMCP) validateTagUUIDs(csv string) error {
@@ -1087,7 +1303,7 @@ func (t *ThingsMCP) handleCreateTask(_ context.Context, req mcp.CallToolRequest)
 	}
 
 	opts := make(map[string]string)
-	for _, key := range []string{"note", "schedule", "deadline", "scheduled", "project_uuid", "heading_uuid", "area_uuid", "tags", "checklist"} {
+	for _, key := range []string{"note", "schedule", "deadline", "scheduled", "project_uuid", "heading_uuid", "area_uuid", "tags", "checklist", "reminder_date", "reminder_time", "recurrence"} {
 		if v := req.GetString(key, ""); v != "" {
 			opts[key] = v
 		}
@@ -1095,6 +1311,13 @@ func (t *ThingsMCP) handleCreateTask(_ context.Context, req mcp.CallToolRequest)
 
 	if err := t.validateOpts(opts); err != nil {
 		return errResult(err.Error()), nil
+	}
+
+	// Validate recurrence format early
+	if v, ok := opts["recurrence"]; ok && v != "" {
+		if _, err := parseRecurrence(v); err != nil {
+			return errResult(err.Error()), nil
+		}
 	}
 
 	taskUUID := generateUUID()
@@ -1130,7 +1353,7 @@ func (t *ThingsMCP) handleCreateProject(_ context.Context, req mcp.CallToolReque
 	}
 
 	opts := map[string]string{"type": "project"}
-	for _, key := range []string{"note", "schedule", "deadline", "scheduled", "area_uuid", "tags"} {
+	for _, key := range []string{"note", "schedule", "deadline", "scheduled", "area_uuid", "tags", "reminder_date", "reminder_time", "recurrence"} {
 		if v := req.GetString(key, ""); v != "" {
 			opts[key] = v
 		}
@@ -1138,6 +1361,13 @@ func (t *ThingsMCP) handleCreateProject(_ context.Context, req mcp.CallToolReque
 
 	if err := t.validateOpts(opts); err != nil {
 		return errResult(err.Error()), nil
+	}
+
+	// Validate recurrence format early
+	if v, ok := opts["recurrence"]; ok && v != "" {
+		if _, err := parseRecurrence(v); err != nil {
+			return errResult(err.Error()), nil
+		}
 	}
 
 	projectUUID := generateUUID()
@@ -1222,6 +1452,97 @@ func (t *ThingsMCP) handleCreateTag(_ context.Context, req mcp.CallToolRequest) 
 	return jsonResult(map[string]string{"status": "created", "uuid": tagUUID, "name": name}), nil
 }
 
+func (t *ThingsMCP) handleEditArea(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	areaUUID, err := req.RequireString("uuid")
+	if err != nil {
+		return errResult("uuid is required"), nil
+	}
+	if err := t.validateAreaUUID(areaUUID); err != nil {
+		return errResult(err.Error()), nil
+	}
+
+	name, err := req.RequireString("name")
+	if err != nil {
+		return errResult("name is required"), nil
+	}
+
+	payload := map[string]any{"tt": name}
+	env := writeEnvelope{id: areaUUID, action: 1, kind: "Area3", payload: payload}
+
+	if err := t.writeAndSync(env); err != nil {
+		return errResult(fmt.Sprintf("edit area: %v", err)), nil
+	}
+	return jsonResult(map[string]string{"status": "updated", "uuid": areaUUID}), nil
+}
+
+func (t *ThingsMCP) handleDeleteArea(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	areaUUID, err := req.RequireString("uuid")
+	if err != nil {
+		return errResult("uuid is required"), nil
+	}
+	if err := t.validateAreaUUID(areaUUID); err != nil {
+		return errResult(err.Error()), nil
+	}
+
+	payload := map[string]any{}
+	env := writeEnvelope{id: areaUUID, action: 2, kind: "Area3", payload: payload}
+
+	if err := t.writeAndSync(env); err != nil {
+		return errResult(fmt.Sprintf("delete area: %v", err)), nil
+	}
+	return jsonResult(map[string]string{"status": "deleted", "uuid": areaUUID}), nil
+}
+
+func (t *ThingsMCP) handleEditTag(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	tagUUID, err := req.RequireString("uuid")
+	if err != nil {
+		return errResult("uuid is required"), nil
+	}
+	if err := t.validateTagUUID(tagUUID); err != nil {
+		return errResult(err.Error()), nil
+	}
+
+	payload := map[string]any{}
+	if v := req.GetString("name", ""); v != "" {
+		payload["tt"] = v
+	}
+	if v := req.GetString("shorthand", ""); v != "" {
+		payload["sh"] = v
+	}
+	if v := req.GetString("parent_uuid", ""); v != "" {
+		payload["pn"] = []string{v}
+	}
+
+	if len(payload) == 0 {
+		return errResult("at least one field (name, shorthand, parent_uuid) must be provided"), nil
+	}
+
+	env := writeEnvelope{id: tagUUID, action: 1, kind: "Tag4", payload: payload}
+
+	if err := t.writeAndSync(env); err != nil {
+		return errResult(fmt.Sprintf("edit tag: %v", err)), nil
+	}
+	return jsonResult(map[string]string{"status": "updated", "uuid": tagUUID}), nil
+}
+
+func (t *ThingsMCP) handleDeleteTag(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	tagUUID, err := req.RequireString("uuid")
+	if err != nil {
+		return errResult("uuid is required"), nil
+	}
+	if err := t.validateTagUUID(tagUUID); err != nil {
+		return errResult(err.Error()), nil
+	}
+
+	payload := map[string]any{}
+	env := writeEnvelope{id: tagUUID, action: 2, kind: "Tag4", payload: payload}
+
+	if err := t.writeAndSync(env); err != nil {
+		return errResult(fmt.Sprintf("delete tag: %v", err)), nil
+	}
+	return jsonResult(map[string]string{"status": "deleted", "uuid": tagUUID}), nil
+}
+
 func (t *ThingsMCP) handleEditTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	taskUUID, err := req.RequireString("uuid")
 	if err != nil {
@@ -1299,6 +1620,31 @@ func (t *ThingsMCP) handleEditTask(_ context.Context, req mcp.CallToolRequest) (
 	if v := req.GetString("tags", ""); v != "" {
 		u.Tags(strings.Split(v, ","))
 	}
+	if rmdStr := req.GetString("reminder_date", ""); rmdStr != "" {
+		if rmdStr == "none" {
+			u.ClearReminder()
+		} else if timeStr := req.GetString("reminder_time", ""); timeStr != "" {
+			if dt := parseDate(rmdStr); dt != nil {
+				if offset, valid := parseTime(timeStr); valid {
+					u.Reminder(dt.Unix()).AlarmOffset(offset)
+				}
+			}
+		}
+	}
+	if v := req.GetString("recurrence", ""); v != "" {
+		if v == "none" {
+			u.ClearRecurrence()
+		} else {
+			rr, err := parseRecurrence(v)
+			if err != nil {
+				return errResult(err.Error()), nil
+			}
+			if rr != nil {
+				u.Recurrence(*rr)
+				u.InstanceCreationStartDate(todayMidnightUTC())
+			}
+		}
+	}
 	if v := req.GetString("status", ""); v != "" {
 		switch v {
 		case "completed":
@@ -1338,6 +1684,116 @@ func (t *ThingsMCP) handleTrashTask(_ context.Context, req mcp.CallToolRequest) 
 	return jsonResult(map[string]string{"status": "trashed", "uuid": taskUUID}), nil
 }
 
+func (t *ThingsMCP) handleRestoreTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	taskUUID, err := req.RequireString("uuid")
+	if err != nil {
+		return errResult("uuid is required"), nil
+	}
+
+	u := newTaskUpdate().Trash(false)
+	env := writeEnvelope{id: taskUUID, action: 1, kind: "Task6", payload: u.build()}
+
+	if err := t.writeAndSync(env); err != nil {
+		return errResult(fmt.Sprintf("restore item: %v", err)), nil
+	}
+	return jsonResult(map[string]string{"status": "restored", "uuid": taskUUID}), nil
+}
+
+// ---------------------------------------------------------------------------
+// Checklist item operations
+// ---------------------------------------------------------------------------
+
+func (t *ThingsMCP) handleAddChecklistItem(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	taskUUID, err := req.RequireString("task_uuid")
+	if err != nil {
+		return errResult("task_uuid is required"), nil
+	}
+	title, err := req.RequireString("title")
+	if err != nil {
+		return errResult("title is required"), nil
+	}
+
+	if err := t.validateTaskUUID(taskUUID); err != nil {
+		return errResult(err.Error()), nil
+	}
+
+	ix := req.GetInt("index", 0)
+	itemUUID := generateUUID()
+	now := nowTs()
+	payload := ChecklistItemCreatePayload{
+		Cd: now, Md: nil, Tt: title, Ss: 0, Sp: nil,
+		Ix: ix, Ts: []string{taskUUID}, Lt: false, Xx: defaultExtension(),
+	}
+	env := writeEnvelope{id: itemUUID, action: 0, kind: "ChecklistItem3", payload: payload}
+
+	if err := t.writeAndSync(env); err != nil {
+		return errResult(fmt.Sprintf("add checklist item: %v", err)), nil
+	}
+	return jsonResult(map[string]string{"status": "created", "uuid": itemUUID, "task_uuid": taskUUID}), nil
+}
+
+func (t *ThingsMCP) handleEditChecklistItem(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	itemUUID, err := req.RequireString("uuid")
+	if err != nil {
+		return errResult("uuid is required"), nil
+	}
+
+	payload := map[string]any{"md": nowTs()}
+	if v := req.GetString("title", ""); v != "" {
+		payload["tt"] = v
+	}
+	if ix := req.GetInt("index", -1); ix >= 0 {
+		payload["ix"] = ix
+	}
+
+	env := writeEnvelope{id: itemUUID, action: 1, kind: "ChecklistItem3", payload: payload}
+	if err := t.writeAndSync(env); err != nil {
+		return errResult(fmt.Sprintf("edit checklist item: %v", err)), nil
+	}
+	return jsonResult(map[string]string{"status": "updated", "uuid": itemUUID}), nil
+}
+
+func (t *ThingsMCP) handleCompleteChecklistItem(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	itemUUID, err := req.RequireString("uuid")
+	if err != nil {
+		return errResult("uuid is required"), nil
+	}
+
+	uncomplete := req.GetBool("uncomplete", false)
+	payload := map[string]any{"md": nowTs()}
+
+	if uncomplete {
+		payload["ss"] = 0
+		payload["sp"] = nil
+	} else {
+		payload["ss"] = 3
+		payload["sp"] = nowTs()
+	}
+
+	env := writeEnvelope{id: itemUUID, action: 1, kind: "ChecklistItem3", payload: payload}
+	if err := t.writeAndSync(env); err != nil {
+		return errResult(fmt.Sprintf("complete checklist item: %v", err)), nil
+	}
+
+	status := "completed"
+	if uncomplete {
+		status = "uncompleted"
+	}
+	return jsonResult(map[string]string{"status": status, "uuid": itemUUID}), nil
+}
+
+func (t *ThingsMCP) handleDeleteChecklistItem(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	itemUUID, err := req.RequireString("uuid")
+	if err != nil {
+		return errResult("uuid is required"), nil
+	}
+
+	env := writeEnvelope{id: itemUUID, action: 2, kind: "ChecklistItem3", payload: map[string]any{}}
+	if err := t.writeAndSync(env); err != nil {
+		return errResult(fmt.Sprintf("delete checklist item: %v", err)), nil
+	}
+	return jsonResult(map[string]string{"status": "deleted", "uuid": itemUUID}), nil
+}
 
 // ---------------------------------------------------------------------------
 // Batch operations
@@ -1476,6 +1932,9 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("area_uuid", mcp.Description("Area UUID to add task to")),
 				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs")),
 				mcp.WithString("checklist", mcp.Description("Comma-separated checklist items")),
+				mcp.WithString("reminder_date", mcp.Description("Reminder date (YYYY-MM-DD). Must be used with reminder_time.")),
+				mcp.WithString("reminder_time", mcp.Description("Reminder time (HH:MM 24h). Must be used with reminder_date.")),
+				mcp.WithString("recurrence", mcp.Description("Recurrence rule: daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days, every N weeks. Use \"none\" to clear.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleCreateTask(ctx, req)
@@ -1500,11 +1959,14 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Project title")),
 				mcp.WithString("note", mcp.Description("Project note/description")),
-				mcp.WithString("schedule", mcp.Description("Schedule: today, anytime, someday, inbox"), mcp.Enum("today", "anytime", "someday", "inbox")),
+				mcp.WithString("schedule", mcp.Description("Schedule: today, anytime (default), someday"), mcp.Enum("today", "anytime", "someday")),
 				mcp.WithString("deadline", mcp.Description("Deadline date (YYYY-MM-DD)")),
 				mcp.WithString("scheduled", mcp.Description("Scheduled date (YYYY-MM-DD)")),
 				mcp.WithString("area_uuid", mcp.Description("Area UUID to add project to")),
 				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs")),
+				mcp.WithString("reminder_date", mcp.Description("Reminder date (YYYY-MM-DD). Must be used with reminder_time.")),
+				mcp.WithString("reminder_time", mcp.Description("Reminder time (HH:MM 24h). Must be used with reminder_date.")),
+				mcp.WithString("recurrence", mcp.Description("Recurrence rule: daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days, every N weeks.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleCreateProject(ctx, req)
@@ -1535,6 +1997,60 @@ func defineTools(um *UserManager) []server.ServerTool {
 			}),
 		},
 
+		// --- Area/Tag edit & delete tools ---
+		{
+			Tool: mcp.NewTool("edit_area",
+				mcp.WithDescription("Rename an area"),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("Area UUID")),
+				mcp.WithString("name", mcp.Required(), mcp.Description("New area name")),
+			),
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleEditArea(ctx, req)
+			}),
+		},
+		{
+			Tool: mcp.NewTool("delete_area",
+				mcp.WithDescription("Permanently delete an area"),
+				mcp.WithDestructiveHintAnnotation(true),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("Area UUID")),
+			),
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleDeleteArea(ctx, req)
+			}),
+		},
+		{
+			Tool: mcp.NewTool("edit_tag",
+				mcp.WithDescription("Edit a tag (name, shorthand, or parent)"),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("Tag UUID")),
+				mcp.WithString("name", mcp.Description("New tag name")),
+				mcp.WithString("shorthand", mcp.Description("New shorthand/abbreviation")),
+				mcp.WithString("parent_uuid", mcp.Description("New parent tag UUID")),
+			),
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleEditTag(ctx, req)
+			}),
+		},
+		{
+			Tool: mcp.NewTool("delete_tag",
+				mcp.WithDescription("Permanently delete a tag"),
+				mcp.WithDestructiveHintAnnotation(true),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("Tag UUID")),
+			),
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleDeleteTag(ctx, req)
+			}),
+		},
+
 		// --- Modify tools ---
 		{
 			Tool: mcp.NewTool("edit_item",
@@ -1552,6 +2068,9 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("project_uuid", mcp.Description("Project UUID")),
 				mcp.WithString("heading_uuid", mcp.Description("Heading UUID")),
 				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs")),
+				mcp.WithString("reminder_date", mcp.Description("Reminder date (YYYY-MM-DD), or \"none\" to clear. Must be used with reminder_time.")),
+				mcp.WithString("reminder_time", mcp.Description("Reminder time (HH:MM 24h). Must be used with reminder_date.")),
+				mcp.WithString("recurrence", mcp.Description("Recurrence rule: daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days, every N weeks. Use \"none\" to clear.")),
 				mcp.WithString("status", mcp.Description("Set status"), mcp.Enum("pending", "completed", "canceled")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1568,6 +2087,72 @@ func defineTools(um *UserManager) []server.ServerTool {
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleTrashTask(ctx, req)
+			}),
+		},
+		{
+			Tool: mcp.NewTool("restore_item",
+				mcp.WithDescription("Restore an item from trash"),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("Task, project, or heading UUID")),
+			),
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleRestoreTask(ctx, req)
+			}),
+		},
+
+		// --- Checklist tools ---
+		{
+			Tool: mcp.NewTool("add_checklist_item",
+				mcp.WithDescription("Add a checklist item to a task"),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("task_uuid", mcp.Required(), mcp.Description("Parent task UUID")),
+				mcp.WithString("title", mcp.Required(), mcp.Description("Checklist item title")),
+				mcp.WithNumber("index", mcp.Description("Sort position (default 0)")),
+			),
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleAddChecklistItem(ctx, req)
+			}),
+		},
+		{
+			Tool: mcp.NewTool("edit_checklist_item",
+				mcp.WithDescription("Edit a checklist item (only provided fields change)"),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("Checklist item UUID")),
+				mcp.WithString("title", mcp.Description("New title")),
+				mcp.WithNumber("index", mcp.Description("New sort position")),
+			),
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleEditChecklistItem(ctx, req)
+			}),
+		},
+		{
+			Tool: mcp.NewTool("complete_checklist_item",
+				mcp.WithDescription("Complete or uncomplete a checklist item"),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("Checklist item UUID")),
+				mcp.WithBoolean("uncomplete", mcp.Description("Set true to mark as pending instead (default false)")),
+			),
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleCompleteChecklistItem(ctx, req)
+			}),
+		},
+		{
+			Tool: mcp.NewTool("delete_checklist_item",
+				mcp.WithDescription("Delete a checklist item"),
+				mcp.WithDestructiveHintAnnotation(true),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("Checklist item UUID")),
+			),
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleDeleteChecklistItem(ctx, req)
 			}),
 		},
 	}

@@ -479,7 +479,7 @@ var LandingPageHTML = `<!DOCTYPE html>
       <span class="hero-feature-sep">/</span>
       <span class="hero-feature">OAuth 2.0</span>
       <span class="hero-feature-sep">/</span>
-      <span class="hero-feature">14 Tools</span>
+      <span class="hero-feature">19 Tools</span>
     </div>
   </div>
 </section>
@@ -804,7 +804,7 @@ var DocsPageHTML = `<!DOCTYPE html>
 <!-- Docs Hero -->
 <div class="docs-hero">
   <h2>Documentation</h2>
-  <p>Complete reference for all 14 tools available through the Things Cloud MCP server.</p>
+  <p>Complete reference for all 19 tools available through the Things Cloud MCP server.</p>
 </div>
 
 <!-- Read Tools -->
@@ -902,6 +902,9 @@ var DocsPageHTML = `<!DOCTYPE html>
       <tr><td><span class="param-name">area_uuid</span></td><td class="param-type">string</td><td>Assign to area</td></tr>
       <tr><td><span class="param-name">tags</span></td><td class="param-type">string</td><td>Comma-separated tag UUIDs</td></tr>
       <tr><td><span class="param-name">checklist</span></td><td class="param-type">string</td><td>Comma-separated checklist items</td></tr>
+      <tr><td><span class="param-name">reminder_date</span></td><td class="param-type">string</td><td>YYYY-MM-DD (use with reminder_time)</td></tr>
+      <tr><td><span class="param-name">reminder_time</span></td><td class="param-type">string</td><td>HH:MM 24h (use with reminder_date)</td></tr>
+      <tr><td><span class="param-name">recurrence</span></td><td class="param-type">string</td><td>daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days/weeks</td></tr>
     </table>
   </div>
 
@@ -917,6 +920,7 @@ var DocsPageHTML = `<!DOCTYPE html>
       <tr><td><span class="param-name">scheduled</span></td><td class="param-type">string</td><td>YYYY-MM-DD</td></tr>
       <tr><td><span class="param-name">area_uuid</span></td><td class="param-type">string</td><td>Assign to area</td></tr>
       <tr><td><span class="param-name">tags</span></td><td class="param-type">string</td><td>Comma-separated tag UUIDs</td></tr>
+      <tr><td><span class="param-name">recurrence</span></td><td class="param-type">string</td><td>daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days/weeks</td></tr>
     </table>
   </div>
 
@@ -956,7 +960,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   <div class="category-header">
     <span class="category-dot modify"></span>
     <h3>Modify</h3>
-    <span class="count">2 tools</span>
+    <span class="count">7 tools</span>
   </div>
 
   <div class="tool-entry">
@@ -974,7 +978,30 @@ var DocsPageHTML = `<!DOCTYPE html>
       <tr><td><span class="param-name">project_uuid</span></td><td class="param-type">string</td><td>Move to project</td></tr>
       <tr><td><span class="param-name">heading_uuid</span></td><td class="param-type">string</td><td>Move to heading</td></tr>
       <tr><td><span class="param-name">tags</span></td><td class="param-type">string</td><td>Comma-separated tag UUIDs</td></tr>
+      <tr><td><span class="param-name">recurrence</span></td><td class="param-type">string</td><td>daily, weekly, monthly, yearly, etc. Use "none" to clear.</td></tr>
       <tr><td><span class="param-name">status</span></td><td class="param-type">enum</td><td>pending, completed, canceled</td></tr>
+    </table>
+  </div>
+
+  <div class="tool-entry">
+    <div class="tool-entry-name">edit_area</div>
+    <div class="tool-entry-desc">Rename an area</div>
+    <table class="params-table">
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Area UUID</td></tr>
+      <tr><td><span class="param-name">name</span><span class="param-required">required</span></td><td class="param-type">string</td><td>New area name</td></tr>
+    </table>
+  </div>
+
+  <div class="tool-entry">
+    <div class="tool-entry-name">edit_tag</div>
+    <div class="tool-entry-desc">Edit a tag (name, shorthand, or parent)</div>
+    <table class="params-table">
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Tag UUID</td></tr>
+      <tr><td><span class="param-name">name</span></td><td class="param-type">string</td><td>New tag name</td></tr>
+      <tr><td><span class="param-name">shorthand</span></td><td class="param-type">string</td><td>New shorthand/abbreviation</td></tr>
+      <tr><td><span class="param-name">parent_uuid</span></td><td class="param-type">string</td><td>New parent tag UUID</td></tr>
     </table>
   </div>
 
@@ -984,6 +1011,83 @@ var DocsPageHTML = `<!DOCTYPE html>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
       <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Item UUID</td></tr>
+    </table>
+  </div>
+
+  <div class="tool-entry">
+    <div class="tool-entry-name">restore_item</div>
+    <div class="tool-entry-desc">Restore an item from trash</div>
+    <table class="params-table">
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Item UUID</td></tr>
+    </table>
+  </div>
+
+  <div class="tool-entry">
+    <div class="tool-entry-name">delete_area</div>
+    <div class="tool-entry-desc">Permanently delete an area</div>
+    <table class="params-table">
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Area UUID</td></tr>
+    </table>
+  </div>
+
+  <div class="tool-entry">
+    <div class="tool-entry-name">delete_tag</div>
+    <div class="tool-entry-desc">Permanently delete a tag</div>
+    <table class="params-table">
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Tag UUID</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- Checklist Tools -->
+<div class="docs-section">
+  <div class="category-header">
+    <span class="category-dot modify"></span>
+    <h3>Checklist</h3>
+    <span class="count">4 tools</span>
+  </div>
+
+  <div class="tool-entry">
+    <div class="tool-entry-name">add_checklist_item</div>
+    <div class="tool-entry-desc">Add a checklist item to a task</div>
+    <table class="params-table">
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><span class="param-name">task_uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Parent task UUID</td></tr>
+      <tr><td><span class="param-name">title</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Checklist item title</td></tr>
+      <tr><td><span class="param-name">index</span></td><td class="param-type">number</td><td>Sort position (default 0)</td></tr>
+    </table>
+  </div>
+
+  <div class="tool-entry">
+    <div class="tool-entry-name">edit_checklist_item</div>
+    <div class="tool-entry-desc">Edit a checklist item (only provided fields change)</div>
+    <table class="params-table">
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Checklist item UUID</td></tr>
+      <tr><td><span class="param-name">title</span></td><td class="param-type">string</td><td>New title</td></tr>
+      <tr><td><span class="param-name">index</span></td><td class="param-type">number</td><td>New sort position</td></tr>
+    </table>
+  </div>
+
+  <div class="tool-entry">
+    <div class="tool-entry-name">complete_checklist_item</div>
+    <div class="tool-entry-desc">Complete or uncomplete a checklist item</div>
+    <table class="params-table">
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Checklist item UUID</td></tr>
+      <tr><td><span class="param-name">uncomplete</span></td><td class="param-type">bool</td><td>Set true to mark as pending instead (default false)</td></tr>
+    </table>
+  </div>
+
+  <div class="tool-entry">
+    <div class="tool-entry-name">delete_checklist_item</div>
+    <div class="tool-entry-desc">Delete a checklist item</div>
+    <table class="params-table">
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Checklist item UUID</td></tr>
     </table>
   </div>
 </div>
@@ -1000,6 +1104,9 @@ var DocsPageHTML = `<!DOCTYPE html>
   "schedule": "inbox | today | anytime | someday | upcoming",
   "scheduledDate": "YYYY-MM-DD",
   "deadlineDate": "YYYY-MM-DD",
+  "creationDate": "YYYY-MM-DDTHH:MM:SSZ",
+  "modificationDate": "YYYY-MM-DDTHH:MM:SSZ",
+  "completionDate": "YYYY-MM-DDTHH:MM:SSZ",
   "areas": [{"uuid": "...", "name": "..."}],
   "project": {"uuid": "...", "name": "..."},
   "tags": [{"uuid": "...", "name": "..."}]
