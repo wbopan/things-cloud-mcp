@@ -763,15 +763,17 @@ func (t *ThingsMCP) rebuildState() error {
 	var allItems []thingscloud.Item
 	startIndex := 0
 	for {
-		items, hasMore, err := t.history.Items(thingscloud.ItemsOptions{StartIndex: startIndex})
+		items, _, err := t.history.Items(thingscloud.ItemsOptions{StartIndex: startIndex})
 		if err != nil {
 			return fmt.Errorf("fetch items: %w", err)
 		}
-		allItems = append(allItems, items...)
-		if !hasMore {
+		if len(items) == 0 {
 			break
 		}
-		startIndex = t.history.LoadedServerIndex
+		allItems = append(allItems, items...)
+		// Use server's current-item-index as next start position
+		// (not LoadedServerIndex which counts batch entries, not server indices)
+		startIndex = t.history.LatestServerIndex
 	}
 
 	state := memory.NewState()
@@ -1778,43 +1780,43 @@ func defineTools(um *UserManager) []server.ServerTool {
 	return []server.ServerTool{
 		// --- Read tools ---
 		{
-			Tool: mcp.NewTool("list_tasks",
-				mcp.WithDescription("List tasks with optional filters"),
+			Tool: mcp.NewTool("things_list_tasks",
+				mcp.WithDescription("List tasks from Things 3 with optional filters. Returns an array of task objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, reminderTime, recurrence, areas, project, tags. By default excludes trashed and completed tasks."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("schedule", mcp.Description("Filter by schedule"), mcp.Enum("inbox", "today", "anytime", "someday", "upcoming")),
-				mcp.WithString("scheduled_before", mcp.Description("YYYY-MM-DD, exclusive")),
-				mcp.WithString("scheduled_after", mcp.Description("YYYY-MM-DD, exclusive")),
-				mcp.WithString("deadline_before", mcp.Description("YYYY-MM-DD, exclusive")),
-				mcp.WithString("deadline_after", mcp.Description("YYYY-MM-DD, exclusive")),
-				mcp.WithString("tag", mcp.Description("Filter by tag name")),
-				mcp.WithString("area", mcp.Description("Filter by area name")),
-				mcp.WithString("project", mcp.Description("Filter by project name")),
-				mcp.WithBoolean("in_trash", mcp.Description("Include trashed items (default false)")),
-				mcp.WithBoolean("is_completed", mcp.Description("Include completed items (default false)")),
+				mcp.WithString("scheduled_before", mcp.Description("Return tasks scheduled before this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("scheduled_after", mcp.Description("Return tasks scheduled after this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("deadline_before", mcp.Description("Return tasks with deadline before this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("deadline_after", mcp.Description("Return tasks with deadline after this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("tag", mcp.Description("Filter by tag name (case-insensitive)")),
+				mcp.WithString("area", mcp.Description("Filter by area name (case-insensitive)")),
+				mcp.WithString("project", mcp.Description("Filter by project name (case-insensitive)")),
+				mcp.WithBoolean("in_trash", mcp.Description("When true, include trashed items in results (default false)")),
+				mcp.WithBoolean("is_completed", mcp.Description("When true, include completed items in results (default false)")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleListTasks(ctx, req)
 			}),
 		},
 		{
-			Tool: mcp.NewTool("show_task",
-				mcp.WithDescription("Show task details including checklist. Accepts UUID prefix."),
+			Tool: mcp.NewTool("things_show_task",
+				mcp.WithDescription("Show full details of a single Things 3 task, including its checklist items. Returns a task object with uuid, title, status, schedule, note, dates, areas, project, tags, and a checklist array (each with uuid, title, status). Accepts a UUID prefix for convenience."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("Task UUID or prefix")),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("Task UUID or unique prefix of the UUID")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleShowTask(ctx, req)
 			}),
 		},
 		{
-			Tool: mcp.NewTool("show_project",
-				mcp.WithDescription("Show project with headings and grouped tasks"),
+			Tool: mcp.NewTool("things_show_project",
+				mcp.WithDescription("Show full details of a Things 3 project, including its headings and tasks grouped by heading. Returns the project info plus a headings array (each with uuid, title, and nested tasks) and an unfiledTasks array for tasks not under any heading."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
@@ -1826,8 +1828,8 @@ func defineTools(um *UserManager) []server.ServerTool {
 			}),
 		},
 		{
-			Tool: mcp.NewTool("list_projects",
-				mcp.WithDescription("List all active projects"),
+			Tool: mcp.NewTool("things_list_projects",
+				mcp.WithDescription("List all active (non-trashed, non-completed) projects in Things 3. Returns an array of project objects, each containing uuid, title, status, schedule, and optional fields: note, scheduledDate, deadlineDate, areas, tags."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
@@ -1838,21 +1840,21 @@ func defineTools(um *UserManager) []server.ServerTool {
 			}),
 		},
 		{
-			Tool: mcp.NewTool("list_headings",
-				mcp.WithDescription("List headings in a project"),
+			Tool: mcp.NewTool("things_list_headings",
+				mcp.WithDescription("List all headings within a Things 3 project. Returns an array of heading objects, each containing uuid and title. Use things_show_project to also see the tasks grouped under each heading."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("project_uuid", mcp.Required(), mcp.Description("Project UUID")),
+				mcp.WithString("project_uuid", mcp.Required(), mcp.Description("UUID of the project to list headings from")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleListHeadings(ctx, req)
 			}),
 		},
 		{
-			Tool: mcp.NewTool("list_areas",
-				mcp.WithDescription("List all areas"),
+			Tool: mcp.NewTool("things_list_areas",
+				mcp.WithDescription("List all areas in Things 3. Areas are top-level organizational containers for projects and tasks. Returns an array of area objects, each containing uuid and title."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
@@ -1863,8 +1865,8 @@ func defineTools(um *UserManager) []server.ServerTool {
 			}),
 		},
 		{
-			Tool: mcp.NewTool("list_tags",
-				mcp.WithDescription("List all tags"),
+			Tool: mcp.NewTool("things_list_tags",
+				mcp.WithDescription("List all tags in Things 3. Returns an array of tag objects, each containing uuid, title, and optional fields: shorthand (abbreviation) and parentIds (for nested tags)."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
@@ -1877,21 +1879,21 @@ func defineTools(um *UserManager) []server.ServerTool {
 
 		// --- Create tools ---
 		{
-			Tool: mcp.NewTool("create_task",
-				mcp.WithDescription("Create a task"),
+			Tool: mcp.NewTool("things_create_task",
+				mcp.WithDescription("Create a new task in Things 3. Returns {status: \"created\", uuid, title}. The task is placed in Inbox by default; set schedule or project_uuid/area_uuid to organize it. Use things_list_projects and things_list_areas first to get valid UUIDs for assignment."),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Task title")),
-				mcp.WithString("note", mcp.Description("Task note/description")),
+				mcp.WithString("note", mcp.Description("Markdown-compatible note or description for the task")),
 				mcp.WithString("schedule", mcp.Description("When to schedule: today, anytime, someday, inbox, or a date (YYYY-MM-DD). Dates go to Upcoming and auto-move to Today when due.")),
-				mcp.WithString("deadline", mcp.Description("Deadline date (YYYY-MM-DD)")),
-				mcp.WithString("project_uuid", mcp.Description("Project UUID to add task to")),
-				mcp.WithString("heading_uuid", mcp.Description("Heading UUID to add task under")),
-				mcp.WithString("area_uuid", mcp.Description("Area UUID to add task to")),
-				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs")),
-				mcp.WithString("checklist", mcp.Description("Comma-separated checklist items")),
-				mcp.WithString("reminder_date", mcp.Description("Reminder date (YYYY-MM-DD). Must be used with reminder_time.")),
-				mcp.WithString("reminder_time", mcp.Description("Reminder time (HH:MM 24h). Must be used with reminder_date.")),
+				mcp.WithString("deadline", mcp.Description("Deadline date in YYYY-MM-DD format")),
+				mcp.WithString("project_uuid", mcp.Description("UUID of the project to add this task to. Use things_list_projects to find project UUIDs.")),
+				mcp.WithString("heading_uuid", mcp.Description("UUID of the heading to place this task under within a project. Use things_list_headings to find heading UUIDs.")),
+				mcp.WithString("area_uuid", mcp.Description("UUID of the area to assign this task to. Use things_list_areas to find area UUIDs.")),
+				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs to apply. Use things_list_tags to find tag UUIDs.")),
+				mcp.WithString("checklist", mcp.Description("Comma-separated checklist item titles to create within the task")),
+				mcp.WithString("reminder_date", mcp.Description("Reminder date in YYYY-MM-DD format. Must be used together with reminder_time.")),
+				mcp.WithString("reminder_time", mcp.Description("Reminder time in HH:MM 24-hour format (e.g. 09:00, 14:30). Must be used together with reminder_date.")),
 				mcp.WithString("recurrence", mcp.Description("Recurrence rule: daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days, every N weeks. Use \"none\" to clear.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1899,30 +1901,30 @@ func defineTools(um *UserManager) []server.ServerTool {
 			}),
 		},
 		{
-			Tool: mcp.NewTool("create_heading",
-				mcp.WithDescription("Create a heading in a project"),
+			Tool: mcp.NewTool("things_create_heading",
+				mcp.WithDescription("Create a new heading within a Things 3 project. Headings are section dividers used to group tasks inside a project. Returns {status: \"created\", uuid, title}."),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Heading title")),
-				mcp.WithString("project_uuid", mcp.Required(), mcp.Description("Project UUID to add heading to")),
+				mcp.WithString("project_uuid", mcp.Required(), mcp.Description("UUID of the project to add the heading to. Use things_list_projects to find project UUIDs.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleCreateHeading(ctx, req)
 			}),
 		},
 		{
-			Tool: mcp.NewTool("create_project",
-				mcp.WithDescription("Create a project"),
+			Tool: mcp.NewTool("things_create_project",
+				mcp.WithDescription("Create a new project in Things 3. Projects are containers that hold tasks and headings. Returns {status: \"created\", uuid, title}. Defaults to Anytime schedule."),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Project title")),
-				mcp.WithString("note", mcp.Description("Project note/description")),
+				mcp.WithString("note", mcp.Description("Markdown-compatible note or description for the project")),
 				mcp.WithString("schedule", mcp.Description("When to schedule: today, anytime (default), someday, or a date (YYYY-MM-DD).")),
-				mcp.WithString("deadline", mcp.Description("Deadline date (YYYY-MM-DD)")),
-				mcp.WithString("area_uuid", mcp.Description("Area UUID to add project to")),
-				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs")),
-				mcp.WithString("reminder_date", mcp.Description("Reminder date (YYYY-MM-DD). Must be used with reminder_time.")),
-				mcp.WithString("reminder_time", mcp.Description("Reminder time (HH:MM 24h). Must be used with reminder_date.")),
+				mcp.WithString("deadline", mcp.Description("Deadline date in YYYY-MM-DD format")),
+				mcp.WithString("area_uuid", mcp.Description("UUID of the area to assign this project to. Use things_list_areas to find area UUIDs.")),
+				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs to apply. Use things_list_tags to find tag UUIDs.")),
+				mcp.WithString("reminder_date", mcp.Description("Reminder date in YYYY-MM-DD format. Must be used together with reminder_time.")),
+				mcp.WithString("reminder_time", mcp.Description("Reminder time in HH:MM 24-hour format (e.g. 09:00, 14:30). Must be used together with reminder_date.")),
 				mcp.WithString("recurrence", mcp.Description("Recurrence rule: daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days, every N weeks.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1930,8 +1932,8 @@ func defineTools(um *UserManager) []server.ServerTool {
 			}),
 		},
 		{
-			Tool: mcp.NewTool("create_area",
-				mcp.WithDescription("Create an area"),
+			Tool: mcp.NewTool("things_create_area",
+				mcp.WithDescription("Create a new area in Things 3. Areas are top-level organizational containers (e.g. \"Work\", \"Personal\") that group projects and tasks. Returns {status: \"created\", uuid, name}."),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("name", mcp.Required(), mcp.Description("Area name")),
@@ -1941,13 +1943,13 @@ func defineTools(um *UserManager) []server.ServerTool {
 			}),
 		},
 		{
-			Tool: mcp.NewTool("create_tag",
-				mcp.WithDescription("Create a tag"),
+			Tool: mcp.NewTool("things_create_tag",
+				mcp.WithDescription("Create a new tag in Things 3. Tags can be applied to tasks and projects for cross-cutting categorization. Tags support nesting via parent_uuid. Returns {status: \"created\", uuid, name}."),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("name", mcp.Required(), mcp.Description("Tag name")),
-				mcp.WithString("shorthand", mcp.Description("Tag shorthand/abbreviation")),
-				mcp.WithString("parent_uuid", mcp.Description("Parent tag UUID for nesting")),
+				mcp.WithString("shorthand", mcp.Description("Short abbreviation for the tag")),
+				mcp.WithString("parent_uuid", mcp.Description("UUID of the parent tag for nesting. Use things_list_tags to find existing tag UUIDs.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleCreateTag(ctx, req)
@@ -1956,12 +1958,12 @@ func defineTools(um *UserManager) []server.ServerTool {
 
 		// --- Area/Tag edit & delete tools ---
 		{
-			Tool: mcp.NewTool("edit_area",
-				mcp.WithDescription("Rename an area"),
+			Tool: mcp.NewTool("things_edit_area",
+				mcp.WithDescription("Rename an existing area in Things 3. Returns {status: \"updated\", uuid}."),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("Area UUID")),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the area to rename. Use things_list_areas to find area UUIDs.")),
 				mcp.WithString("name", mcp.Required(), mcp.Description("New area name")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -1969,39 +1971,39 @@ func defineTools(um *UserManager) []server.ServerTool {
 			}),
 		},
 		{
-			Tool: mcp.NewTool("delete_area",
-				mcp.WithDescription("Permanently delete an area"),
+			Tool: mcp.NewTool("things_delete_area",
+				mcp.WithDescription("Permanently delete an area from Things 3. Tasks and projects in this area will become unassigned. This action cannot be undone. Returns {status: \"deleted\", uuid}."),
 				mcp.WithDestructiveHintAnnotation(true),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("Area UUID")),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the area to delete. Use things_list_areas to find area UUIDs.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleDeleteArea(ctx, req)
 			}),
 		},
 		{
-			Tool: mcp.NewTool("edit_tag",
-				mcp.WithDescription("Edit a tag (name, shorthand, or parent)"),
+			Tool: mcp.NewTool("things_edit_tag",
+				mcp.WithDescription("Edit an existing tag in Things 3. Only provided fields are updated; omitted fields remain unchanged. Returns {status: \"updated\", uuid}."),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("Tag UUID")),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the tag to edit. Use things_list_tags to find tag UUIDs.")),
 				mcp.WithString("name", mcp.Description("New tag name")),
-				mcp.WithString("shorthand", mcp.Description("New shorthand/abbreviation")),
-				mcp.WithString("parent_uuid", mcp.Description("New parent tag UUID")),
+				mcp.WithString("shorthand", mcp.Description("New short abbreviation for the tag")),
+				mcp.WithString("parent_uuid", mcp.Description("UUID of the new parent tag for nesting. Use things_list_tags to find tag UUIDs.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleEditTag(ctx, req)
 			}),
 		},
 		{
-			Tool: mcp.NewTool("delete_tag",
-				mcp.WithDescription("Permanently delete a tag"),
+			Tool: mcp.NewTool("things_delete_tag",
+				mcp.WithDescription("Permanently delete a tag from Things 3. The tag will be removed from all tasks and projects that use it. This action cannot be undone. Returns {status: \"deleted\", uuid}."),
 				mcp.WithDestructiveHintAnnotation(true),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("Tag UUID")),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the tag to delete. Use things_list_tags to find tag UUIDs.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleDeleteTag(ctx, req)
@@ -2010,24 +2012,24 @@ func defineTools(um *UserManager) []server.ServerTool {
 
 		// --- Modify tools ---
 		{
-			Tool: mcp.NewTool("edit_item",
-				mcp.WithDescription("Edit a task or project (only provided fields change)"),
+			Tool: mcp.NewTool("things_edit_item",
+				mcp.WithDescription("Edit an existing task or project in Things 3. Only provided fields are updated; omitted fields remain unchanged. Can also change status to complete, cancel, trash, or restore items. Returns {status: \"updated\", uuid}."),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("Task or project UUID")),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the task or project to edit")),
 				mcp.WithString("title", mcp.Description("New title")),
-				mcp.WithString("note", mcp.Description("New note")),
+				mcp.WithString("note", mcp.Description("New note content (replaces existing note)")),
 				mcp.WithString("schedule", mcp.Description("When to schedule: today, anytime, someday, inbox, or a date (YYYY-MM-DD). Dates go to Upcoming and auto-move to Today when due.")),
-				mcp.WithString("deadline", mcp.Description("Deadline date (YYYY-MM-DD)")),
-				mcp.WithString("area_uuid", mcp.Description("Area UUID")),
-				mcp.WithString("project_uuid", mcp.Description("Project UUID")),
-				mcp.WithString("heading_uuid", mcp.Description("Heading UUID")),
-				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs")),
-				mcp.WithString("reminder_date", mcp.Description("Reminder date (YYYY-MM-DD), or \"none\" to clear. Must be used with reminder_time.")),
-				mcp.WithString("reminder_time", mcp.Description("Reminder time (HH:MM 24h). Must be used with reminder_date.")),
+				mcp.WithString("deadline", mcp.Description("Deadline date in YYYY-MM-DD format")),
+				mcp.WithString("area_uuid", mcp.Description("UUID of the area to assign to. Use things_list_areas to find area UUIDs.")),
+				mcp.WithString("project_uuid", mcp.Description("UUID of the project to move to. Use things_list_projects to find project UUIDs.")),
+				mcp.WithString("heading_uuid", mcp.Description("UUID of the heading to place under. Use things_list_headings to find heading UUIDs.")),
+				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs (replaces all existing tags). Use things_list_tags to find tag UUIDs.")),
+				mcp.WithString("reminder_date", mcp.Description("Reminder date in YYYY-MM-DD format, or \"none\" to clear. Must be used together with reminder_time.")),
+				mcp.WithString("reminder_time", mcp.Description("Reminder time in HH:MM 24-hour format (e.g. 09:00, 14:30). Must be used together with reminder_date.")),
 				mcp.WithString("recurrence", mcp.Description("Recurrence rule: daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days, every N weeks. Use \"none\" to clear.")),
-				mcp.WithString("status", mcp.Description("Set status: pending, completed, canceled, trashed (move to trash), restored (restore from trash)"), mcp.Enum("pending", "completed", "canceled", "trashed", "restored")),
+				mcp.WithString("status", mcp.Description("Set item status: pending, completed, canceled, trashed (move to trash), restored (restore from trash)"), mcp.Enum("pending", "completed", "canceled", "trashed", "restored")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleEditTask(ctx, req)
@@ -2036,40 +2038,40 @@ func defineTools(um *UserManager) []server.ServerTool {
 
 		// --- Checklist tools ---
 		{
-			Tool: mcp.NewTool("add_checklist_item",
-				mcp.WithDescription("Add a checklist item to a task"),
+			Tool: mcp.NewTool("things_add_checklist_item",
+				mcp.WithDescription("Add a checklist item to an existing Things 3 task. Checklist items are sub-steps within a task. Returns {status: \"created\", uuid, task_uuid}. Use things_show_task to see existing checklist items."),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("task_uuid", mcp.Required(), mcp.Description("Parent task UUID")),
+				mcp.WithString("task_uuid", mcp.Required(), mcp.Description("UUID of the parent task to add the checklist item to")),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Checklist item title")),
-				mcp.WithNumber("index", mcp.Description("Sort position (default 0)")),
+				mcp.WithNumber("index", mcp.Description("Sort position within the checklist (default 0, lower values appear first)")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleAddChecklistItem(ctx, req)
 			}),
 		},
 		{
-			Tool: mcp.NewTool("edit_checklist_item",
-				mcp.WithDescription("Edit a checklist item (only provided fields change)"),
+			Tool: mcp.NewTool("things_edit_checklist_item",
+				mcp.WithDescription("Edit an existing checklist item in Things 3. Only provided fields are updated; omitted fields remain unchanged. Returns {status: \"updated\", uuid}. Use things_show_task to find checklist item UUIDs."),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("Checklist item UUID")),
-				mcp.WithString("title", mcp.Description("New title")),
-				mcp.WithNumber("index", mcp.Description("New sort position")),
-				mcp.WithBoolean("completed", mcp.Description("Set true to complete, false to uncomplete")),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the checklist item to edit. Use things_show_task to find checklist item UUIDs.")),
+				mcp.WithString("title", mcp.Description("New checklist item title")),
+				mcp.WithNumber("index", mcp.Description("New sort position within the checklist")),
+				mcp.WithBoolean("completed", mcp.Description("Set true to mark as completed, false to mark as pending")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleEditChecklistItem(ctx, req)
 			}),
 		},
 		{
-			Tool: mcp.NewTool("delete_checklist_item",
-				mcp.WithDescription("Delete a checklist item"),
+			Tool: mcp.NewTool("things_delete_checklist_item",
+				mcp.WithDescription("Permanently delete a checklist item from a Things 3 task. This action cannot be undone. Returns {status: \"deleted\", uuid}. Use things_show_task to find checklist item UUIDs."),
 				mcp.WithDestructiveHintAnnotation(true),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("Checklist item UUID")),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the checklist item to delete. Use things_show_task to find checklist item UUIDs.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleDeleteChecklistItem(ctx, req)

@@ -828,7 +828,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">list_tasks</div>
+    <div class="tool-entry-name">things_list_tasks</div>
     <div class="tool-entry-desc">List tasks with optional filters</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -846,7 +846,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">show_task</div>
+    <div class="tool-entry-name">things_show_task</div>
     <div class="tool-entry-desc">Show task details including checklist. Accepts UUID prefix.</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -855,7 +855,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">show_project</div>
+    <div class="tool-entry-name">things_show_project</div>
     <div class="tool-entry-desc">Show project with headings and grouped tasks</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -864,13 +864,13 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">list_projects</div>
+    <div class="tool-entry-name">things_list_projects</div>
     <div class="tool-entry-desc">List all active projects</div>
     <div class="no-params">No parameters</div>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">list_headings</div>
+    <div class="tool-entry-name">things_list_headings</div>
     <div class="tool-entry-desc">List headings in a project</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -879,13 +879,13 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">list_areas</div>
+    <div class="tool-entry-name">things_list_areas</div>
     <div class="tool-entry-desc">List all areas</div>
     <div class="no-params">No parameters</div>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">list_tags</div>
+    <div class="tool-entry-name">things_list_tags</div>
     <div class="tool-entry-desc">List all tags</div>
     <div class="no-params">No parameters</div>
   </div>
@@ -900,7 +900,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">create_task</div>
+    <div class="tool-entry-name">things_create_task</div>
     <div class="tool-entry-desc">Create a task</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -920,7 +920,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">create_project</div>
+    <div class="tool-entry-name">things_create_project</div>
     <div class="tool-entry-desc">Create a project</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -935,7 +935,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">create_heading</div>
+    <div class="tool-entry-name">things_create_heading</div>
     <div class="tool-entry-desc">Create a heading in a project</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -945,7 +945,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">create_area</div>
+    <div class="tool-entry-name">things_create_area</div>
     <div class="tool-entry-desc">Create an area</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -954,7 +954,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">create_tag</div>
+    <div class="tool-entry-name">things_create_tag</div>
     <div class="tool-entry-desc">Create a tag</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -974,7 +974,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">edit_item</div>
+    <div class="tool-entry-name">things_edit_item</div>
     <div class="tool-entry-desc">Edit a task or project (only provided fields change)</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -993,7 +993,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">edit_area</div>
+    <div class="tool-entry-name">things_edit_area</div>
     <div class="tool-entry-desc">Rename an area</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -1003,7 +1003,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">edit_tag</div>
+    <div class="tool-entry-name">things_edit_tag</div>
     <div class="tool-entry-desc">Edit a tag (name, shorthand, or parent)</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -1015,7 +1015,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">trash_item</div>
+    <div class="tool-entry-name">things_trash_item</div>
     <div class="tool-entry-desc">Move an item to trash</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -1024,7 +1024,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">restore_item</div>
+    <div class="tool-entry-name">things_restore_item</div>
     <div class="tool-entry-desc">Restore an item from trash</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -1033,7 +1033,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">delete_area</div>
+    <div class="tool-entry-name">things_delete_area</div>
     <div class="tool-entry-desc">Permanently delete an area</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -1042,7 +1042,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">delete_tag</div>
+    <div class="tool-entry-name">things_delete_tag</div>
     <div class="tool-entry-desc">Permanently delete a tag</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -1060,7 +1060,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">add_checklist_item</div>
+    <div class="tool-entry-name">things_add_checklist_item</div>
     <div class="tool-entry-desc">Add a checklist item to a task</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -1071,7 +1071,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">edit_checklist_item</div>
+    <div class="tool-entry-name">things_edit_checklist_item</div>
     <div class="tool-entry-desc">Edit a checklist item (only provided fields change)</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -1082,7 +1082,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">complete_checklist_item</div>
+    <div class="tool-entry-name">things_complete_checklist_item</div>
     <div class="tool-entry-desc">Complete or uncomplete a checklist item</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -1092,7 +1092,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">delete_checklist_item</div>
+    <div class="tool-entry-name">things_delete_checklist_item</div>
     <div class="tool-entry-desc">Delete a checklist item</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
