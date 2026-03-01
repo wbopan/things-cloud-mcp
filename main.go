@@ -1711,6 +1711,7 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 	}
 
 	state := t.getState()
+	statusFilter := req.GetString("status", "pending")
 
 	// Find the project
 	var project *thingscloud.Task
@@ -1749,8 +1750,22 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 	// Collect tasks in this project, group by heading
 	var unfiled []TaskOutput
 	for _, task := range state.Tasks {
-		if task.InTrash || task.Status == 3 || task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
+		if task.InTrash || task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
 			continue
+		}
+		switch statusFilter {
+		case "completed":
+			if task.Status != 3 {
+				continue
+			}
+		case "canceled":
+			if task.Status != 2 {
+				continue
+			}
+		default:
+			if task.Status != 0 {
+				continue
+			}
 		}
 		if !containsStr(task.ParentTaskIDs, projectUUID) {
 			continue
