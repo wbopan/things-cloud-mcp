@@ -1177,6 +1177,161 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 }
 
 func (t *ThingsMCP) diagnoseSteps4to7(history *thingscloud.History, report *diagReport, warnings *[]string, errors *[]string) {
+	// Step 4: paginated_fetch
+	step4 := diagStep{
+		Step:        4,
+		Name:        "paginated_fetch",
+		Description: "Fetch all items via paginated API",
+		Log:         []string{},
+	}
+
+	type pageInfo struct {
+		Page             int `json:"page"`
+		StartIndex       int `json:"startIndex"`
+		ItemsFetched     int `json:"itemsFetched"`
+		ServerIndexAfter int `json:"serverIndexAfter"`
+	}
+
+	var allItems []thingscloud.Item
+	var pages []pageInfo
+	startIndex := 0
+	pageNum := 0
+	step4Failed := false
+
+	start := time.Now()
+	for {
+		pageNum++
+		items, _, err := history.Items(thingscloud.ItemsOptions{StartIndex: startIndex})
+		serverIndexAfter := history.LatestServerIndex
+		if err != nil {
+			step4.DurationMs = time.Since(start).Milliseconds()
+			step4.Status = "fail"
+			step4.Details = map[string]any{
+				"error":             err.Error(),
+				"totalItemsFetched": len(allItems),
+				"paginationPages":   pageNum,
+				"pages":             pages,
+				"finalServerIndex":  serverIndexAfter,
+			}
+			step4.Log = append(step4.Log, fmt.Sprintf("Page %d failed at startIndex %d: %v", pageNum, startIndex, err))
+			*errors = append(*errors, fmt.Sprintf("Step 4: paginated fetch failed on page %d: %v", pageNum, err))
+			report.Steps = append(report.Steps, step4)
+			step4Failed = true
+			break
+		}
+		if len(items) == 0 {
+			break
+		}
+		allItems = append(allItems, items...)
+		pi := pageInfo{
+			Page:             pageNum,
+			StartIndex:       startIndex,
+			ItemsFetched:     len(items),
+			ServerIndexAfter: serverIndexAfter,
+		}
+		pages = append(pages, pi)
+		step4.Log = append(step4.Log, fmt.Sprintf("Page %d: startIndex=%d, fetched=%d, serverIndex=%d", pageNum, startIndex, len(items), serverIndexAfter))
+		startIndex = serverIndexAfter
+	}
+
+	if !step4Failed {
+		step4.DurationMs = time.Since(start).Milliseconds()
+		step4.Status = "pass"
+		finalServerIndex := 0
+		if len(pages) > 0 {
+			finalServerIndex = pages[len(pages)-1].ServerIndexAfter
+		}
+		step4.Details = map[string]any{
+			"totalItemsFetched": len(allItems),
+			"paginationPages":   len(pages),
+			"pages":             pages,
+			"finalServerIndex":  finalServerIndex,
+		}
+		step4.Log = append(step4.Log, fmt.Sprintf("Total items fetched: %d across %d pages", len(allItems), len(pages)))
+		report.Steps = append(report.Steps, step4)
+	}
+
+	if step4Failed {
+		// Skip remaining steps 5-7
+		for _, sk := range []struct {
+			num        int
+			name, desc string
+		}{
+			{5, "rebuild_state", "Rebuild in-memory state from items"},
+			{6, "data_integrity", "Check data integrity and referential consistency"},
+			{7, "query_tests", "Run sample queries against rebuilt state"},
+		} {
+			report.Steps = append(report.Steps, diagStep{
+				Step:        sk.num,
+				Name:        sk.name,
+				Description: sk.desc,
+				Status:      "skipped",
+				Details:     map[string]any{"reason": "previous step failed"},
+				Log:         []string{},
+			})
+		}
+		return
+	}
+
+	// Step 5: rebuild_state
+	step5 := diagStep{
+		Step:        5,
+		Name:        "rebuild_state",
+		Description: "Rebuild in-memory state from items",
+		Log:         []string{},
+	}
+
+	start = time.Now()
+	state := memory.NewState()
+	err := state.Update(allItems...)
+	step5.DurationMs = time.Since(start).Milliseconds()
+
+	if err != nil {
+		step5.Status = "fail"
+		step5.Details = map[string]any{"error": err.Error()}
+		step5.Log = append(step5.Log, fmt.Sprintf("State rebuild failed: %v", err))
+		*errors = append(*errors, fmt.Sprintf("Step 5: state rebuild failed: %v", err))
+		report.Steps = append(report.Steps, step5)
+
+		for _, sk := range []struct {
+			num        int
+			name, desc string
+		}{
+			{6, "data_integrity", "Check data integrity and referential consistency"},
+			{7, "query_tests", "Run sample queries against rebuilt state"},
+		} {
+			report.Steps = append(report.Steps, diagStep{
+				Step:        sk.num,
+				Name:        sk.name,
+				Description: sk.desc,
+				Status:      "skipped",
+				Details:     map[string]any{"reason": "previous step failed"},
+				Log:         []string{},
+			})
+		}
+		return
+	}
+
+	step5.Status = "pass"
+	step5.Details = map[string]any{
+		"tasks":          len(state.Tasks),
+		"areas":          len(state.Areas),
+		"tags":           len(state.Tags),
+		"checklistItems": len(state.CheckListItems),
+	}
+	step5.Log = append(step5.Log, fmt.Sprintf("State rebuilt: %d tasks, %d areas, %d tags, %d checklist items",
+		len(state.Tasks), len(state.Areas), len(state.Tags), len(state.CheckListItems)))
+	report.Steps = append(report.Steps, step5)
+
+	// Steps 6-7: delegated
+	t.diagnoseDataIntegrity(state, report, warnings)
+	t.diagnoseQueryTests(report, warnings, errors)
+}
+
+func (t *ThingsMCP) diagnoseDataIntegrity(state *memory.State, report *diagReport, allWarnings *[]string) {
+}
+
+func (t *ThingsMCP) diagnoseQueryTests(report *diagReport, allWarnings *[]string, allErrors *[]string) {
 }
 
 func buildDiagSummary(steps []diagStep) diagSummary {
@@ -1291,7 +1446,7 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 		if !inTrash && task.InTrash {
 			continue
 		}
-		if !isCompleted && task.Status == 3 {
+		if !isCompleted && (task.Status == 3 || task.Status == 2) {
 			continue
 		}
 
@@ -1433,7 +1588,7 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 	// Collect tasks in this project, group by heading
 	var unfiled []TaskOutput
 	for _, task := range state.Tasks {
-		if task.InTrash || task.Status == 3 || task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
+		if task.InTrash || task.Status == 3 || task.Status == 2 || task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
 			continue
 		}
 		if !containsStr(task.ParentTaskIDs, projectUUID) {
@@ -1496,7 +1651,7 @@ func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolReques
 
 	var projects []TaskOutput
 	for _, task := range state.Tasks {
-		if task.Type != thingscloud.TaskTypeProject || task.InTrash || task.Status == 3 {
+		if task.Type != thingscloud.TaskTypeProject || task.InTrash || task.Status == 3 || task.Status == 2 {
 			continue
 		}
 		if createdBeforeDate != nil && !task.CreationDate.Before(*createdBeforeDate) {
