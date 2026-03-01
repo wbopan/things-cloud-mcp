@@ -1787,16 +1787,32 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 	return jsonResult(out), nil
 }
 
-func (t *ThingsMCP) handleListProjects(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if err := t.syncAndRebuild(); err != nil {
 		return errResult(fmt.Sprintf("sync: %v", err)), nil
 	}
 	state := t.getState()
+	statusFilter := req.GetString("status", "pending")
 	var projects []TaskOutput
 	for _, task := range state.Tasks {
-		if task.Type == thingscloud.TaskTypeProject && !task.InTrash && task.Status != 3 {
-			projects = append(projects, t.taskToOutput(task))
+		if task.Type != thingscloud.TaskTypeProject || task.InTrash {
+			continue
 		}
+		switch statusFilter {
+		case "completed":
+			if task.Status != 3 {
+				continue
+			}
+		case "canceled":
+			if task.Status != 2 {
+				continue
+			}
+		default:
+			if task.Status != 0 {
+				continue
+			}
+		}
+		projects = append(projects, t.taskToOutput(task))
 	}
 	if projects == nil {
 		projects = []TaskOutput{}
