@@ -1547,6 +1547,7 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 	tagName := req.GetString("tag", "")
 	areaName := req.GetString("area", "")
 	projectName := req.GetString("project", "")
+	containsText := strings.ToLower(req.GetString("contains_text", ""))
 	inTrash := req.GetBool("in_trash", false)
 	isCompleted := req.GetBool("is_completed", false)
 
@@ -1649,6 +1650,9 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 			continue
 		}
 		if tagUUID != "" && !containsStr(task.TagIDs, tagUUID) {
+			continue
+		}
+		if containsText != "" && !strings.Contains(strings.ToLower(task.Title), containsText) && !strings.Contains(strings.ToLower(task.Note), containsText) {
 			continue
 		}
 
@@ -2356,6 +2360,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("tag", mcp.Description("Filter by tag name (case-insensitive)")),
 				mcp.WithString("area", mcp.Description("Filter by area name (case-insensitive)")),
 				mcp.WithString("project", mcp.Description("Filter by project name (case-insensitive)")),
+				mcp.WithString("contains_text", mcp.Description("Filter tasks whose title or note contains this text (case-insensitive)")),
 				mcp.WithBoolean("in_trash", mcp.Description("When true, include trashed items in results (default false)")),
 				mcp.WithBoolean("is_completed", mcp.Description("When true, include completed items in results (default false)")),
 			),
