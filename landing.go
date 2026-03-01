@@ -514,8 +514,8 @@ var LandingPageHTML = `<!DOCTYPE html>
       <div class="client-instructions" data-client="claude-code">
         <div class="step"><span class="num">1</span><div class="step-text">Run the following command:</div></div>
         <pre><code>claude mcp add --transport http \
-  --header "Authorization: Basic BASE64_ENCODE(email:password)" \
-  things-cloud <span class="mcp-url"></span></code></pre>
+  things-cloud <span class="mcp-url"></span> \
+  --header "Authorization: Basic BASE64_ENCODE(email:password)"</code></pre>
         <div class="note">Replace <strong>BASE64_ENCODE(email:password)</strong> with your base64-encoded Things Cloud credentials (email:password). Generate with: <code>echo -n 'email:password' | base64</code></div>
         <div class="step"><span class="num">2</span><div class="step-text">Verify with the <strong>/mcp</strong> command inside Claude Code.</div></div>
       </div>
@@ -1141,8 +1141,8 @@ var DocsPageHTML = `<!DOCTYPE html>
     <div class="client-instructions" data-client="claude-code">
       <div class="step"><span class="num">1</span><div class="step-text">Run the following command:</div></div>
       <pre><code>claude mcp add --transport http \
-  --header "Authorization: Basic BASE64_ENCODE(email:password)" \
-  things-cloud <span class="mcp-url"></span></code></pre>
+  things-cloud <span class="mcp-url"></span> \
+  --header "Authorization: Basic BASE64_ENCODE(email:password)"</code></pre>
       <div class="note">Replace <strong>BASE64_ENCODE(email:password)</strong> with your base64-encoded Things Cloud credentials (email:password). Generate with: <code>echo -n 'email:password' | base64</code></div>
       <div class="step"><span class="num">2</span><div class="step-text">Verify with the <strong>/mcp</strong> command inside Claude Code.</div></div>
     </div>
