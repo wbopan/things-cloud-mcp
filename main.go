@@ -2385,7 +2385,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 		// --- Read tools ---
 		{
 			Tool: mcp.NewTool("things_list_tasks",
-				mcp.WithDescription("List tasks from Things 3 with optional filters. Returns an array of task objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, reminderTime, recurrence, areas, project, tags. By default excludes trashed and completed tasks."),
+				mcp.WithDescription("List tasks from Things 3 with optional filters. Returns an array of task objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, reminderTime, recurrence, areas, project, tags. Default: only pending (active) tasks. Use status parameter to query completed or canceled tasks."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
@@ -2399,7 +2399,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("area", mcp.Description("Filter by area name (case-insensitive)")),
 				mcp.WithString("project", mcp.Description("Filter by project name (case-insensitive)")),
 				mcp.WithBoolean("in_trash", mcp.Description("When true, include trashed items in results (default false)")),
-				mcp.WithBoolean("is_completed", mcp.Description("When true, include completed items in results (default false)")),
+				mcp.WithString("status", mcp.Description("Filter by task status (default: pending — only active tasks)"), mcp.Enum("pending", "completed", "canceled")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleListTasks(ctx, req)
@@ -2426,6 +2426,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("uuid", mcp.Required(), mcp.Description("Project UUID")),
+				mcp.WithString("status", mcp.Description("Filter child tasks by status (default: pending — only active tasks)"), mcp.Enum("pending", "completed", "canceled")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleShowProject(ctx, req)
@@ -2433,11 +2434,12 @@ func defineTools(um *UserManager) []server.ServerTool {
 		},
 		{
 			Tool: mcp.NewTool("things_list_projects",
-				mcp.WithDescription("List all active (non-trashed, non-completed) projects in Things 3. Returns an array of project objects, each containing uuid, title, status, schedule, and optional fields: note, scheduledDate, deadlineDate, areas, tags."),
+				mcp.WithDescription("List projects in Things 3 with optional filters. Returns an array of project objects, each containing uuid, title, status, schedule, and optional fields: note, scheduledDate, deadlineDate, areas, tags. Default: only pending (active) projects. Use status parameter to query completed or canceled projects."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("status", mcp.Description("Filter by project status (default: pending — only active projects)"), mcp.Enum("pending", "completed", "canceled")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleListProjects(ctx, req)
