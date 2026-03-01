@@ -1471,16 +1471,41 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 	return jsonResult(out), nil
 }
 
-func (t *ThingsMCP) handleListProjects(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if err := t.syncAndRebuild(); err != nil {
 		return errResult(fmt.Sprintf("sync: %v", err)), nil
 	}
 	state := t.getState()
+
+	createdBefore := req.GetString("created_before", "")
+	createdAfter := req.GetString("created_after", "")
+
+	var createdBeforeDate, createdAfterDate *time.Time
+	if createdBefore != "" {
+		createdBeforeDate = parseDate(createdBefore)
+		if createdBeforeDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", createdBefore)), nil
+		}
+	}
+	if createdAfter != "" {
+		createdAfterDate = parseDate(createdAfter)
+		if createdAfterDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", createdAfter)), nil
+		}
+	}
+
 	var projects []TaskOutput
 	for _, task := range state.Tasks {
-		if task.Type == thingscloud.TaskTypeProject && !task.InTrash && task.Status != 3 {
-			projects = append(projects, t.taskToOutput(task))
+		if task.Type != thingscloud.TaskTypeProject || task.InTrash || task.Status == 3 {
+			continue
 		}
+		if createdBeforeDate != nil && !task.CreationDate.Before(*createdBeforeDate) {
+			continue
+		}
+		if createdAfterDate != nil && !task.CreationDate.After(*createdAfterDate) {
+			continue
+		}
+		projects = append(projects, t.taskToOutput(task))
 	}
 	if projects == nil {
 		projects = []TaskOutput{}
