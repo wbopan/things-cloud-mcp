@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1329,9 +1330,236 @@ func (t *ThingsMCP) diagnoseSteps4to7(history *thingscloud.History, report *diag
 }
 
 func (t *ThingsMCP) diagnoseDataIntegrity(state *memory.State, report *diagReport, allWarnings *[]string) {
+	step := diagStep{
+		Step:        6,
+		Name:        "data_integrity",
+		Description: "Check data integrity and referential consistency",
+		Log:         []string{},
+	}
+
+	start := time.Now()
+
+	// Count tasks by status (only TaskTypeTask, not projects/headings)
+	var active, completed, canceled, trashed int
+	yearCounts := map[int]int{}
+	var oldest, newest time.Time
+	first := true
+
+	for _, task := range state.Tasks {
+		if task.Type != thingscloud.TaskTypeTask {
+			continue
+		}
+		if task.InTrash {
+			trashed++
+		} else {
+			switch task.Status {
+			case thingscloud.TaskStatusCompleted:
+				completed++
+			case thingscloud.TaskStatusCanceled:
+				canceled++
+			default:
+				active++
+			}
+		}
+
+		y := task.CreationDate.Year()
+		yearCounts[y]++
+
+		if first || task.CreationDate.Before(oldest) {
+			oldest = task.CreationDate
+		}
+		if first || task.CreationDate.After(newest) {
+			newest = task.CreationDate
+		}
+		first = false
+	}
+
+	// Build sorted year distribution
+	years := make([]int, 0, len(yearCounts))
+	for y := range yearCounts {
+		years = append(years, y)
+	}
+	sort.Ints(years)
+
+	var yearParts []string
+	for _, y := range years {
+		yearParts = append(yearParts, fmt.Sprintf("%d=%d", y, yearCounts[y]))
+	}
+	yearDist := strings.Join(yearParts, ", ")
+
+	step.Log = append(step.Log, fmt.Sprintf("Task status counts — active=%d, completed=%d, canceled=%d, trashed=%d", active, completed, canceled, trashed))
+	step.Log = append(step.Log, fmt.Sprintf("Year distribution: %s", yearDist))
+
+	// Detect anomalies
+	var stepWarnings []string
+	currentYear := time.Now().Year()
+
+	if !first && newest.Year() < currentYear-1 {
+		w := fmt.Sprintf("No tasks found after %d", newest.Year())
+		stepWarnings = append(stepWarnings, w)
+		step.Log = append(step.Log, fmt.Sprintf("Warning: %s", w))
+	}
+
+	if len(years) >= 2 {
+		for i := 1; i < len(years); i++ {
+			if years[i]-years[i-1] > 1 {
+				gapStart := years[i-1] + 1
+				gapEnd := years[i] - 1
+				var w string
+				if gapStart == gapEnd {
+					w = fmt.Sprintf("Gap detected: no tasks in year %d", gapStart)
+				} else {
+					w = fmt.Sprintf("Gap detected: no tasks in years %d–%d", gapStart, gapEnd)
+				}
+				stepWarnings = append(stepWarnings, w)
+				step.Log = append(step.Log, fmt.Sprintf("Warning: %s", w))
+			}
+		}
+	}
+
+	step.DurationMs = time.Since(start).Milliseconds()
+
+	details := map[string]any{
+		"active":           active,
+		"completed":        completed,
+		"canceled":         canceled,
+		"trashed":          trashed,
+		"yearDistribution": yearDist,
+	}
+	if !first {
+		details["oldestTask"] = oldest.Format("2006-01-02")
+		details["newestTask"] = newest.Format("2006-01-02")
+	}
+	if len(stepWarnings) > 0 {
+		details["warnings"] = stepWarnings
+	}
+	step.Details = details
+
+	if len(stepWarnings) > 0 {
+		step.Status = "warn"
+		for _, w := range stepWarnings {
+			*allWarnings = append(*allWarnings, fmt.Sprintf("Step 6: %s", w))
+		}
+	} else {
+		step.Status = "pass"
+	}
+
+	report.Steps = append(report.Steps, step)
 }
 
 func (t *ThingsMCP) diagnoseQueryTests(report *diagReport, allWarnings *[]string, allErrors *[]string) {
+	type queryResult struct {
+		Name  string `json:"name"`
+		OK    bool   `json:"ok"`
+		Count int    `json:"count"`
+		Error string `json:"error,omitempty"`
+	}
+
+	step := diagStep{
+		Step:        7,
+		Name:        "query_tests",
+		Description: "Run sample queries against rebuilt state",
+		Log:         []string{},
+	}
+
+	start := time.Now()
+
+	// Test sync
+	syncErr := t.syncAndRebuild()
+	var results []queryResult
+
+	if syncErr != nil {
+		step.Log = append(step.Log, fmt.Sprintf("syncAndRebuild failed: %v", syncErr))
+		results = append(results, queryResult{
+			Name:  "syncAndRebuild",
+			OK:    false,
+			Count: 0,
+			Error: syncErr.Error(),
+		})
+	} else {
+		step.Log = append(step.Log, "syncAndRebuild succeeded")
+		results = append(results, queryResult{
+			Name:  "syncAndRebuild",
+			OK:    true,
+			Count: 0,
+		})
+	}
+
+	state := t.getState()
+
+	// Count active tasks
+	activeTasks := 0
+	if state != nil {
+		for _, task := range state.Tasks {
+			if task.Type == thingscloud.TaskTypeTask && !task.InTrash &&
+				task.Status != thingscloud.TaskStatusCompleted &&
+				task.Status != thingscloud.TaskStatusCanceled {
+				activeTasks++
+			}
+		}
+	}
+	step.Log = append(step.Log, fmt.Sprintf("Active tasks: %d", activeTasks))
+	results = append(results, queryResult{
+		Name:  "activeTasks",
+		OK:    true,
+		Count: activeTasks,
+	})
+
+	// Count active projects
+	activeProjects := 0
+	if state != nil {
+		for _, task := range state.Tasks {
+			if task.Type == thingscloud.TaskTypeProject && !task.InTrash &&
+				task.Status != thingscloud.TaskStatusCompleted {
+				activeProjects++
+			}
+		}
+	}
+	step.Log = append(step.Log, fmt.Sprintf("Active projects: %d", activeProjects))
+	results = append(results, queryResult{
+		Name:  "activeProjects",
+		OK:    true,
+		Count: activeProjects,
+	})
+
+	// Count areas
+	areaCount := 0
+	if state != nil {
+		areaCount = len(state.Areas)
+	}
+	step.Log = append(step.Log, fmt.Sprintf("Areas: %d", areaCount))
+	results = append(results, queryResult{
+		Name:  "areas",
+		OK:    true,
+		Count: areaCount,
+	})
+
+	// Count tags
+	tagCount := 0
+	if state != nil {
+		tagCount = len(state.Tags)
+	}
+	step.Log = append(step.Log, fmt.Sprintf("Tags: %d", tagCount))
+	results = append(results, queryResult{
+		Name:  "tags",
+		OK:    true,
+		Count: tagCount,
+	})
+
+	step.DurationMs = time.Since(start).Milliseconds()
+
+	step.Details = map[string]any{
+		"queryResults": results,
+	}
+
+	if syncErr != nil {
+		step.Status = "fail"
+		*allErrors = append(*allErrors, fmt.Sprintf("Step 7: syncAndRebuild failed: %v", syncErr))
+	} else {
+		step.Status = "pass"
+	}
+
+	report.Steps = append(report.Steps, step)
 }
 
 func buildDiagSummary(steps []diagStep) diagSummary {
