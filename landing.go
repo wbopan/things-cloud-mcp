@@ -444,6 +444,14 @@ const cloudCheckSVGLarge = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0
   <polyline points="24,34 30,40 42,28" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>`
 
+// sharedFooter contains the footer HTML shared between landing, docs, and how-it-works pages.
+const sharedFooter = `<footer>
+  <div class="container">
+    <p>Powered by <a href="https://github.com/arthursoares/things-cloud-sdk" target="_blank" rel="noopener">Things Cloud SDK</a></p>
+    <p style="margin-top:6px;font-size:12px">Not affiliated with Cultured Code. Built through reverse engineering.</p>
+  </div>
+</footer>`
+
 // LandingPageHTML contains the full HTML landing page styled after Things 3's design language.
 var LandingPageHTML = `<!DOCTYPE html>
 <html lang="en">
@@ -563,11 +571,7 @@ var LandingPageHTML = `<!DOCTYPE html>
 </section>
 
 <!-- Footer -->
-<footer>
-  <div class="container">
-    <p>Powered by <a href="https://github.com/arthursoares/things-cloud-sdk" target="_blank" rel="noopener">Things Cloud SDK</a></p>
-  </div>
-</footer>
+` + sharedFooter + `
 
 <script>
 (function(){
@@ -841,7 +845,7 @@ var DocsPageHTML = `<!DOCTYPE html>
       <tr><td><span class="param-name">area</span></td><td class="param-type">string</td><td>Filter by area</td></tr>
       <tr><td><span class="param-name">project</span></td><td class="param-type">string</td><td>Filter by project</td></tr>
       <tr><td><span class="param-name">in_trash</span></td><td class="param-type">bool</td><td>Include trashed items (default false)</td></tr>
-      <tr><td><span class="param-name">is_completed</span></td><td class="param-type">bool</td><td>Include completed items (default false)</td></tr>
+      <tr><td><span class="param-name">status</span></td><td class="param-type">enum</td><td>pending (default), completed, canceled</td></tr>
     </table>
   </div>
 
@@ -860,13 +864,17 @@ var DocsPageHTML = `<!DOCTYPE html>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
       <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Project UUID or prefix</td></tr>
+      <tr><td><span class="param-name">status</span></td><td class="param-type">enum</td><td>Filter child tasks: pending (default), completed, canceled</td></tr>
     </table>
   </div>
 
   <div class="tool-entry">
     <div class="tool-entry-name">things_list_projects</div>
-    <div class="tool-entry-desc">List all active projects</div>
-    <div class="no-params">No parameters</div>
+    <div class="tool-entry-desc">List projects with optional filters</div>
+    <table class="params-table">
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><span class="param-name">status</span></td><td class="param-type">enum</td><td>pending (default), completed, canceled</td></tr>
+    </table>
   </div>
 
   <div class="tool-entry">
@@ -1191,11 +1199,7 @@ var DocsPageHTML = `<!DOCTYPE html>
 </div><!-- /container -->
 
 <!-- Footer -->
-<footer>
-  <div class="container">
-    <p>Powered by <a href="https://github.com/arthursoares/things-cloud-sdk" target="_blank" rel="noopener">Things Cloud SDK</a></p>
-  </div>
-</footer>
+` + sharedFooter + `
 
 <script>
 (function(){
@@ -1539,11 +1543,7 @@ var HowItWorksPageHTML = `<!DOCTYPE html>
 </div><!-- /container -->
 
 <!-- Footer -->
-<footer>
-  <div class="container">
-    <p>Powered by <a href="https://github.com/arthursoares/things-cloud-sdk" target="_blank" rel="noopener">Things Cloud SDK</a></p>
-  </div>
-</footer>
+` + sharedFooter + `
 
 </body>
 </html>`

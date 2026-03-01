@@ -952,6 +952,7 @@ var authorizePageHTML = `<!DOCTYPE html>
       </div>
       <button type="submit" class="auth-btn">Authorize</button>
     </form>
+    <p style="margin-top:20px;font-size:11px;color:var(--text-secondary);text-align:center;line-height:1.5">Not affiliated with Cultured Code. Built through reverse engineering with <a href="https://github.com/arthursoares/things-cloud-sdk" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">Things Cloud SDK</a>.</p>
   </div>
 </div>
 </body>
