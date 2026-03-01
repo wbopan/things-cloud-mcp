@@ -2456,6 +2456,8 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("scheduled_after", mcp.Description("Return tasks scheduled after this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("deadline_before", mcp.Description("Return tasks with deadline before this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("deadline_after", mcp.Description("Return tasks with deadline after this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("created_before", mcp.Description("Return tasks created before this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("created_after", mcp.Description("Return tasks created after this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("tag", mcp.Description("Filter by tag name (case-insensitive)")),
 				mcp.WithString("area", mcp.Description("Filter by area name (case-insensitive)")),
 				mcp.WithString("project", mcp.Description("Filter by project name (case-insensitive)")),
@@ -2494,11 +2496,13 @@ func defineTools(um *UserManager) []server.ServerTool {
 		},
 		{
 			Tool: mcp.NewTool("things_list_projects",
-				mcp.WithDescription("List all active (non-trashed, non-completed) projects in Things 3. Returns an array of project objects, each containing uuid, title, status, schedule, and optional fields: note, scheduledDate, deadlineDate, areas, tags."),
+				mcp.WithDescription("List active (non-trashed, non-completed) projects in Things 3 with optional filters. Returns an array of project objects, each containing uuid, title, status, schedule, and optional fields: note, scheduledDate, deadlineDate, areas, tags."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("created_before", mcp.Description("Return projects created before this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("created_after", mcp.Description("Return projects created after this date (YYYY-MM-DD, exclusive)")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleListProjects(ctx, req)
