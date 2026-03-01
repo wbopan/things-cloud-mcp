@@ -2,3 +2,4 @@ things-mcp
 cleanup-tool
 cmd/
 data/
+.worktrees/
