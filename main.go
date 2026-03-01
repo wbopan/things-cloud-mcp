@@ -2746,6 +2746,54 @@ func defineTools(um *UserManager) []server.ServerTool {
 				return t.handleDeleteChecklistItem(ctx, req)
 			}),
 		},
+
+		// --- Diagnosis tool ---
+		{
+			Tool: mcp.NewTool("things_diagnose",
+				mcp.WithDescription("Run a full diagnostic of the Things Cloud sync pipeline. Tests credentials, fetches history, paginates through all items, rebuilds state, checks data integrity, and runs query tests. Returns a detailed step-by-step report with logs, timing, and any warnings or errors. Use this to debug sync issues like missing or stale tasks."),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
+			),
+			Handler: func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				// Resolve credentials from context
+				val := ctx.Value(userContextKey)
+				if val == nil {
+					return errResult("authentication required"), nil
+				}
+				info, ok := val.(*UserInfo)
+				if !ok {
+					return errResult("invalid user context"), nil
+				}
+
+				var email, password string
+				if info.Token != "" {
+					if um.oauth == nil {
+						return errResult("Bearer token authentication not configured"), nil
+					}
+					var err error
+					email, password, err = um.oauth.ResolveBearer(info.Token)
+					if err != nil {
+						return errResult(fmt.Sprintf("Bearer auth failed: %v", err)), nil
+					}
+				} else {
+					email = info.Email
+					password = info.Password
+				}
+				if email == "" || password == "" {
+					return errResult("invalid credentials"), nil
+				}
+
+				t, err := getUserFromContext(ctx, um)
+				if err != nil {
+					return errResult(err.Error()), nil
+				}
+
+				report := t.handleDiagnose(email, password)
+				return jsonResult(report), nil
+			},
+		},
 	}
 }
 
