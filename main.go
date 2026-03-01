@@ -1548,7 +1548,7 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 	areaName := req.GetString("area", "")
 	projectName := req.GetString("project", "")
 	inTrash := req.GetBool("in_trash", false)
-	isCompleted := req.GetBool("is_completed", false)
+	statusFilter := req.GetString("status", "pending")
 
 	// Pre-resolve names to UUIDs
 	var areaUUID, projectUUID, tagUUID string
@@ -1608,8 +1608,19 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 		if !inTrash && task.InTrash {
 			continue
 		}
-		if !isCompleted && task.Status == 3 {
-			continue
+		switch statusFilter {
+		case "completed":
+			if task.Status != 3 {
+				continue
+			}
+		case "canceled":
+			if task.Status != 2 {
+				continue
+			}
+		default: // "pending"
+			if task.Status != 0 {
+				continue
+			}
 		}
 
 		// Schedule filter
