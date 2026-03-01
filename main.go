@@ -975,18 +975,18 @@ type diagStep struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Status      string `json:"status"`
-	DurationMs  int64  `json:"duration_ms"`
+	DurationMs  int64  `json:"durationMs"`
 	Details     any    `json:"details"`
 	Log         []string `json:"log"`
 }
 
 type diagSummary struct {
-	TotalSteps      int   `json:"total_steps"`
+	TotalSteps      int   `json:"totalSteps"`
 	Passed          int   `json:"passed"`
 	Warnings        int   `json:"warnings"`
 	Failed          int   `json:"failed"`
 	Skipped         int   `json:"skipped"`
-	TotalDurationMs int64 `json:"total_duration_ms"`
+	TotalDurationMs int64 `json:"totalDurationMs"`
 }
 
 type diagReport struct {
@@ -1061,9 +1061,9 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 
 	step1.Status = "pass"
 	step1.Details = map[string]any{
-		"account_status": string(verifyResp.Status),
-		"history_key":    verifyResp.HistoryKey,
-		"email":          maskEmail(verifyResp.Email),
+		"accountStatus": string(verifyResp.Status),
+		"historyKey":    verifyResp.HistoryKey,
+		"email":         maskEmail(verifyResp.Email),
 	}
 	step1.Log = append(step1.Log, fmt.Sprintf("Account status: %s", verifyResp.Status))
 	report.Steps = append(report.Steps, step1)
@@ -1113,7 +1113,7 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 
 	step2.Status = "pass"
 	step2.Details = map[string]any{
-		"history_id": history.ID,
+		"historyId": history.ID,
 	}
 	step2.Log = append(step2.Log, fmt.Sprintf("History ID: %s", history.ID))
 	report.Steps = append(report.Steps, step2)
@@ -1162,7 +1162,7 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 
 	step3.Status = "pass"
 	step3.Details = map[string]any{
-		"latest_server_index": history.LatestServerIndex,
+		"latestServerIndex": history.LatestServerIndex,
 	}
 	step3.Log = append(step3.Log, fmt.Sprintf("Latest server index: %d", history.LatestServerIndex))
 	report.Steps = append(report.Steps, step3)
