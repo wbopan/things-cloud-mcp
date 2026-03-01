@@ -1879,7 +1879,7 @@ func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolReques
 
 	var projects []TaskOutput
 	for _, task := range state.Tasks {
-		if task.Type != thingscloud.TaskTypeProject || task.InTrash || task.Status == 3 || task.Status == 2 {
+		if task.Type != thingscloud.TaskTypeProject || task.InTrash || task.Status == 3 {
 			continue
 		}
 		if createdBeforeDate != nil && !task.CreationDate.Before(*createdBeforeDate) {
