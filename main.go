@@ -1362,6 +1362,10 @@ func (t *ThingsMCP) diagnoseDataIntegrity(state *memory.State, report *diagRepor
 			}
 		}
 
+		if task.CreationDate.IsZero() || task.CreationDate.Year() < 2000 {
+			continue
+		}
+
 		y := task.CreationDate.Year()
 		yearCounts[y]++
 
@@ -1424,7 +1428,7 @@ func (t *ThingsMCP) diagnoseDataIntegrity(state *memory.State, report *diagRepor
 		"completed":        completed,
 		"canceled":         canceled,
 		"trashed":          trashed,
-		"yearDistribution": yearDist,
+		"yearDistribution": yearCounts,
 	}
 	if !first {
 		details["oldestTask"] = oldest.Format("2006-01-02")
