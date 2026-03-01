@@ -1005,6 +1005,54 @@ func maskEmail(email string) string {
 	return string(parts[0][0]) + "***@" + parts[1]
 }
 
+var diagStepDefs = []struct{ num int; name, desc string }{
+	{1, "credential_verification", "Verify Things Cloud credentials and account status"},
+	{2, "fetch_history", "Fetch account history object"},
+	{3, "sync_history", "Sync history to get latest server index"},
+	{4, "paginated_fetch", "Fetch all items via paginated API"},
+	{5, "rebuild_state", "Rebuild in-memory state from items"},
+	{6, "data_integrity", "Check data completeness and integrity"},
+	{7, "query_tests", "Test basic list/query operations"},
+}
+
+func addSkippedSteps(report *diagReport, fromStep int) {
+	for _, sd := range diagStepDefs {
+		if sd.num < fromStep {
+			continue
+		}
+		report.Steps = append(report.Steps, diagStep{
+			Step: sd.num, Name: sd.name, Description: sd.desc,
+			Status: "skipped",
+			Details: map[string]any{"reason": "previous step failed"},
+		})
+	}
+}
+
+func extractCredentials(ctx context.Context, um *UserManager) (string, string, error) {
+	val := ctx.Value(userContextKey)
+	if val == nil {
+		return "", "", fmt.Errorf("authentication required: provide Authorization header (Basic or Bearer)")
+	}
+	info, ok := val.(*UserInfo)
+	if !ok {
+		return "", "", fmt.Errorf("invalid user context")
+	}
+	if info.Token != "" {
+		if um.oauth == nil {
+			return "", "", fmt.Errorf("Bearer token authentication not configured")
+		}
+		email, password, err := um.oauth.ResolveBearer(info.Token)
+		if err != nil {
+			return "", "", fmt.Errorf("Bearer auth failed: %w", err)
+		}
+		return email, password, nil
+	}
+	if info.Email == "" || info.Password == "" {
+		return "", "", fmt.Errorf("invalid credentials")
+	}
+	return info.Email, info.Password, nil
+}
+
 // ---------------------------------------------------------------------------
 // Diagnostic handler: steps 1-3
 // ---------------------------------------------------------------------------
@@ -1035,25 +1083,7 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 		allErrors = append(allErrors, fmt.Sprintf("Step 1: credential verification failed: %v", err))
 		report.Steps = append(report.Steps, step1)
 
-		// Skip remaining steps
-		for _, sk := range []struct{ num int; name, desc string }{
-			{2, "fetch_history", "Fetch account history object"},
-			{3, "sync_history", "Sync history to get latest server index"},
-			{4, "paginated_fetch", "Fetch all items via paginated API"},
-			{5, "rebuild_state", "Rebuild in-memory state from items"},
-			{6, "data_integrity", "Check data integrity and referential consistency"},
-			{7, "query_tests", "Run sample queries against rebuilt state"},
-		} {
-			report.Steps = append(report.Steps, diagStep{
-				Step:        sk.num,
-				Name:        sk.name,
-				Description: sk.desc,
-				Status:      "skipped",
-				Details:     map[string]any{"reason": "previous step failed"},
-				Log:         []string{},
-			})
-		}
-
+		addSkippedSteps(report, 2)
 		report.Warnings = allWarnings
 		report.Errors = allErrors
 		report.Summary = buildDiagSummary(report.Steps)
@@ -1088,24 +1118,7 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 		allErrors = append(allErrors, fmt.Sprintf("Step 2: fetch history failed: %v", err))
 		report.Steps = append(report.Steps, step2)
 
-		// Skip remaining steps
-		for _, sk := range []struct{ num int; name, desc string }{
-			{3, "sync_history", "Sync history to get latest server index"},
-			{4, "paginated_fetch", "Fetch all items via paginated API"},
-			{5, "rebuild_state", "Rebuild in-memory state from items"},
-			{6, "data_integrity", "Check data integrity and referential consistency"},
-			{7, "query_tests", "Run sample queries against rebuilt state"},
-		} {
-			report.Steps = append(report.Steps, diagStep{
-				Step:        sk.num,
-				Name:        sk.name,
-				Description: sk.desc,
-				Status:      "skipped",
-				Details:     map[string]any{"reason": "previous step failed"},
-				Log:         []string{},
-			})
-		}
-
+		addSkippedSteps(report, 3)
 		report.Warnings = allWarnings
 		report.Errors = allErrors
 		report.Summary = buildDiagSummary(report.Steps)
@@ -1138,23 +1151,7 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 		allErrors = append(allErrors, fmt.Sprintf("Step 3: history sync failed: %v", err))
 		report.Steps = append(report.Steps, step3)
 
-		// Skip remaining steps
-		for _, sk := range []struct{ num int; name, desc string }{
-			{4, "paginated_fetch", "Fetch all items via paginated API"},
-			{5, "rebuild_state", "Rebuild in-memory state from items"},
-			{6, "data_integrity", "Check data integrity and referential consistency"},
-			{7, "query_tests", "Run sample queries against rebuilt state"},
-		} {
-			report.Steps = append(report.Steps, diagStep{
-				Step:        sk.num,
-				Name:        sk.name,
-				Description: sk.desc,
-				Status:      "skipped",
-				Details:     map[string]any{"reason": "previous step failed"},
-				Log:         []string{},
-			})
-		}
-
+		addSkippedSteps(report, 4)
 		report.Warnings = allWarnings
 		report.Errors = allErrors
 		report.Summary = buildDiagSummary(report.Steps)
@@ -1253,24 +1250,7 @@ func (t *ThingsMCP) diagnoseSteps4to7(history *thingscloud.History, report *diag
 	}
 
 	if step4Failed {
-		// Skip remaining steps 5-7
-		for _, sk := range []struct {
-			num        int
-			name, desc string
-		}{
-			{5, "rebuild_state", "Rebuild in-memory state from items"},
-			{6, "data_integrity", "Check data integrity and referential consistency"},
-			{7, "query_tests", "Run sample queries against rebuilt state"},
-		} {
-			report.Steps = append(report.Steps, diagStep{
-				Step:        sk.num,
-				Name:        sk.name,
-				Description: sk.desc,
-				Status:      "skipped",
-				Details:     map[string]any{"reason": "previous step failed"},
-				Log:         []string{},
-			})
-		}
+		addSkippedSteps(report, 5)
 		return
 	}
 
@@ -1293,23 +1273,7 @@ func (t *ThingsMCP) diagnoseSteps4to7(history *thingscloud.History, report *diag
 		step5.Log = append(step5.Log, fmt.Sprintf("State rebuild failed: %v", err))
 		*errors = append(*errors, fmt.Sprintf("Step 5: state rebuild failed: %v", err))
 		report.Steps = append(report.Steps, step5)
-
-		for _, sk := range []struct {
-			num        int
-			name, desc string
-		}{
-			{6, "data_integrity", "Check data integrity and referential consistency"},
-			{7, "query_tests", "Run sample queries against rebuilt state"},
-		} {
-			report.Steps = append(report.Steps, diagStep{
-				Step:        sk.num,
-				Name:        sk.name,
-				Description: sk.desc,
-				Status:      "skipped",
-				Details:     map[string]any{"reason": "previous step failed"},
-				Log:         []string{},
-			})
-		}
+		addSkippedSteps(report, 6)
 		return
 	}
 
@@ -1491,64 +1455,45 @@ func (t *ThingsMCP) diagnoseQueryTests(report *diagReport, allWarnings *[]string
 
 	state := t.getState()
 
-	// Count active tasks
-	activeTasks := 0
+	// Count tasks and projects in a single pass
+	var activeTasks, activeProjects int
 	if state != nil {
 		for _, task := range state.Tasks {
-			if task.Type == thingscloud.TaskTypeTask && !task.InTrash &&
-				task.Status != thingscloud.TaskStatusCompleted &&
-				task.Status != thingscloud.TaskStatusCanceled {
-				activeTasks++
+			if task.InTrash {
+				continue
+			}
+			switch task.Type {
+			case thingscloud.TaskTypeTask:
+				if task.Status != thingscloud.TaskStatusCompleted && task.Status != thingscloud.TaskStatusCanceled {
+					activeTasks++
+				}
+			case thingscloud.TaskTypeProject:
+				if task.Status != thingscloud.TaskStatusCompleted {
+					activeProjects++
+				}
 			}
 		}
 	}
+
+	results = append(results,
+		queryResult{Name: "activeTasks", OK: true, Count: activeTasks},
+		queryResult{Name: "activeProjects", OK: true, Count: activeProjects},
+	)
 	step.Log = append(step.Log, fmt.Sprintf("Active tasks: %d", activeTasks))
-	results = append(results, queryResult{
-		Name:  "activeTasks",
-		OK:    true,
-		Count: activeTasks,
-	})
-
-	// Count active projects
-	activeProjects := 0
-	if state != nil {
-		for _, task := range state.Tasks {
-			if task.Type == thingscloud.TaskTypeProject && !task.InTrash &&
-				task.Status != thingscloud.TaskStatusCompleted {
-				activeProjects++
-			}
-		}
-	}
 	step.Log = append(step.Log, fmt.Sprintf("Active projects: %d", activeProjects))
-	results = append(results, queryResult{
-		Name:  "activeProjects",
-		OK:    true,
-		Count: activeProjects,
-	})
 
-	// Count areas
-	areaCount := 0
+	// Count areas and tags
+	var areaCount, tagCount int
 	if state != nil {
 		areaCount = len(state.Areas)
-	}
-	step.Log = append(step.Log, fmt.Sprintf("Areas: %d", areaCount))
-	results = append(results, queryResult{
-		Name:  "areas",
-		OK:    true,
-		Count: areaCount,
-	})
-
-	// Count tags
-	tagCount := 0
-	if state != nil {
 		tagCount = len(state.Tags)
 	}
+	results = append(results,
+		queryResult{Name: "areas", OK: true, Count: areaCount},
+		queryResult{Name: "tags", OK: true, Count: tagCount},
+	)
+	step.Log = append(step.Log, fmt.Sprintf("Areas: %d", areaCount))
 	step.Log = append(step.Log, fmt.Sprintf("Tags: %d", tagCount))
-	results = append(results, queryResult{
-		Name:  "tags",
-		OK:    true,
-		Count: tagCount,
-	})
 
 	step.DurationMs = time.Since(start).Milliseconds()
 
@@ -1599,8 +1544,6 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 	scheduledAfter := req.GetString("scheduled_after", "")
 	deadlineBefore := req.GetString("deadline_before", "")
 	deadlineAfter := req.GetString("deadline_after", "")
-	createdBefore := req.GetString("created_before", "")
-	createdAfter := req.GetString("created_after", "")
 	tagName := req.GetString("tag", "")
 	areaName := req.GetString("area", "")
 	projectName := req.GetString("project", "")
@@ -1654,19 +1597,6 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 			return errResult(fmt.Sprintf("invalid date: %s", deadlineAfter)), nil
 		}
 	}
-	var createdBeforeDate, createdAfterDate *time.Time
-	if createdBefore != "" {
-		createdBeforeDate = parseDate(createdBefore)
-		if createdBeforeDate == nil {
-			return errResult(fmt.Sprintf("invalid date: %s", createdBefore)), nil
-		}
-	}
-	if createdAfter != "" {
-		createdAfterDate = parseDate(createdAfter)
-		if createdAfterDate == nil {
-			return errResult(fmt.Sprintf("invalid date: %s", createdAfter)), nil
-		}
-	}
 
 	var tasks []TaskOutput
 	for _, task := range state.Tasks {
@@ -1678,7 +1608,7 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 		if !inTrash && task.InTrash {
 			continue
 		}
-		if !isCompleted && (task.Status == 3 || task.Status == 2) {
+		if !isCompleted && task.Status == 3 {
 			continue
 		}
 
@@ -1711,18 +1641,6 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 				continue
 			}
 		}
-		// Creation date filters (exclusive) — CreationDate is non-nullable, no nil check needed
-		if createdBeforeDate != nil {
-			if !task.CreationDate.Before(*createdBeforeDate) {
-				continue
-			}
-		}
-		if createdAfterDate != nil {
-			if !task.CreationDate.After(*createdAfterDate) {
-				continue
-			}
-		}
-
 		// Name-based filters
 		if areaUUID != "" && !containsStr(task.AreaIDs, areaUUID) {
 			continue
@@ -1820,7 +1738,7 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 	// Collect tasks in this project, group by heading
 	var unfiled []TaskOutput
 	for _, task := range state.Tasks {
-		if task.InTrash || task.Status == 3 || task.Status == 2 || task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
+		if task.InTrash || task.Status == 3 || task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
 			continue
 		}
 		if !containsStr(task.ParentTaskIDs, projectUUID) {
@@ -1858,41 +1776,16 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 	return jsonResult(out), nil
 }
 
-func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (t *ThingsMCP) handleListProjects(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if err := t.syncAndRebuild(); err != nil {
 		return errResult(fmt.Sprintf("sync: %v", err)), nil
 	}
 	state := t.getState()
-
-	createdBefore := req.GetString("created_before", "")
-	createdAfter := req.GetString("created_after", "")
-
-	var createdBeforeDate, createdAfterDate *time.Time
-	if createdBefore != "" {
-		createdBeforeDate = parseDate(createdBefore)
-		if createdBeforeDate == nil {
-			return errResult(fmt.Sprintf("invalid date: %s", createdBefore)), nil
-		}
-	}
-	if createdAfter != "" {
-		createdAfterDate = parseDate(createdAfter)
-		if createdAfterDate == nil {
-			return errResult(fmt.Sprintf("invalid date: %s", createdAfter)), nil
-		}
-	}
-
 	var projects []TaskOutput
 	for _, task := range state.Tasks {
-		if task.Type != thingscloud.TaskTypeProject || task.InTrash || task.Status == 3 {
-			continue
+		if task.Type == thingscloud.TaskTypeProject && !task.InTrash && task.Status != 3 {
+			projects = append(projects, t.taskToOutput(task))
 		}
-		if createdBeforeDate != nil && !task.CreationDate.Before(*createdBeforeDate) {
-			continue
-		}
-		if createdAfterDate != nil && !task.CreationDate.After(*createdAfterDate) {
-			continue
-		}
-		projects = append(projects, t.taskToOutput(task))
 	}
 	if projects == nil {
 		projects = []TaskOutput{}
@@ -2460,8 +2353,6 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("scheduled_after", mcp.Description("Return tasks scheduled after this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("deadline_before", mcp.Description("Return tasks with deadline before this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("deadline_after", mcp.Description("Return tasks with deadline after this date (YYYY-MM-DD, exclusive)")),
-				mcp.WithString("created_before", mcp.Description("Return tasks created before this date (YYYY-MM-DD, exclusive)")),
-				mcp.WithString("created_after", mcp.Description("Return tasks created after this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("tag", mcp.Description("Filter by tag name (case-insensitive)")),
 				mcp.WithString("area", mcp.Description("Filter by area name (case-insensitive)")),
 				mcp.WithString("project", mcp.Description("Filter by project name (case-insensitive)")),
@@ -2500,13 +2391,11 @@ func defineTools(um *UserManager) []server.ServerTool {
 		},
 		{
 			Tool: mcp.NewTool("things_list_projects",
-				mcp.WithDescription("List active (non-trashed, non-completed) projects in Things 3 with optional filters. Returns an array of project objects, each containing uuid, title, status, schedule, and optional fields: note, scheduledDate, deadlineDate, areas, tags."),
+				mcp.WithDescription("List all active (non-trashed, non-completed) projects in Things 3. Returns an array of project objects, each containing uuid, title, status, schedule, and optional fields: note, scheduledDate, deadlineDate, areas, tags."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("created_before", mcp.Description("Return projects created before this date (YYYY-MM-DD, exclusive)")),
-				mcp.WithString("created_after", mcp.Description("Return projects created after this date (YYYY-MM-DD, exclusive)")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleListProjects(ctx, req)
@@ -2761,39 +2650,14 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithOpenWorldHintAnnotation(false),
 			),
 			Handler: func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-				// Resolve credentials from context
-				val := ctx.Value(userContextKey)
-				if val == nil {
-					return errResult("authentication required"), nil
+				email, password, err := extractCredentials(ctx, um)
+				if err != nil {
+					return errResult(err.Error()), nil
 				}
-				info, ok := val.(*UserInfo)
-				if !ok {
-					return errResult("invalid user context"), nil
-				}
-
-				var email, password string
-				if info.Token != "" {
-					if um.oauth == nil {
-						return errResult("Bearer token authentication not configured"), nil
-					}
-					var err error
-					email, password, err = um.oauth.ResolveBearer(info.Token)
-					if err != nil {
-						return errResult(fmt.Sprintf("Bearer auth failed: %v", err)), nil
-					}
-				} else {
-					email = info.Email
-					password = info.Password
-				}
-				if email == "" || password == "" {
-					return errResult("invalid credentials"), nil
-				}
-
 				t, err := getUserFromContext(ctx, um)
 				if err != nil {
 					return errResult(err.Error()), nil
 				}
-
 				report := t.handleDiagnose(email, password)
 				return jsonResult(report), nil
 			},
