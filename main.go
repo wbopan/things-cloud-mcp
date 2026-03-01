@@ -967,6 +967,237 @@ func errResult(msg string) *mcp.CallToolResult {
 }
 
 // ---------------------------------------------------------------------------
+// Diagnostic types
+// ---------------------------------------------------------------------------
+
+type diagStep struct {
+	Step        int    `json:"step"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+	DurationMs  int64  `json:"duration_ms"`
+	Details     any    `json:"details"`
+	Log         []string `json:"log"`
+}
+
+type diagSummary struct {
+	TotalSteps      int   `json:"total_steps"`
+	Passed          int   `json:"passed"`
+	Warnings        int   `json:"warnings"`
+	Failed          int   `json:"failed"`
+	Skipped         int   `json:"skipped"`
+	TotalDurationMs int64 `json:"total_duration_ms"`
+}
+
+type diagReport struct {
+	Steps    []diagStep  `json:"steps"`
+	Summary  diagSummary `json:"summary"`
+	Warnings []string    `json:"warnings"`
+	Errors   []string    `json:"errors"`
+}
+
+func maskEmail(email string) string {
+	parts := strings.SplitN(email, "@", 2)
+	if len(parts) != 2 || len(parts[0]) == 0 {
+		return "***"
+	}
+	return string(parts[0][0]) + "***@" + parts[1]
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostic handler: steps 1-3
+// ---------------------------------------------------------------------------
+
+func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
+	report := &diagReport{}
+	var allWarnings []string
+	var allErrors []string
+
+	// Step 1: credential_verification
+	step1 := diagStep{
+		Step:        1,
+		Name:        "credential_verification",
+		Description: "Verify Things Cloud credentials and account status",
+		Log:         []string{},
+	}
+	step1.Log = append(step1.Log, fmt.Sprintf("Verifying credentials for %s", maskEmail(email)))
+
+	start := time.Now()
+	client := thingscloud.New(thingscloud.APIEndpoint, email, password)
+	verifyResp, err := client.Verify()
+	step1.DurationMs = time.Since(start).Milliseconds()
+
+	if err != nil {
+		step1.Status = "fail"
+		step1.Details = map[string]any{"error": err.Error()}
+		step1.Log = append(step1.Log, fmt.Sprintf("Credential verification failed: %v", err))
+		allErrors = append(allErrors, fmt.Sprintf("Step 1: credential verification failed: %v", err))
+		report.Steps = append(report.Steps, step1)
+
+		// Skip remaining steps
+		for _, sk := range []struct{ num int; name, desc string }{
+			{2, "fetch_history", "Fetch account history object"},
+			{3, "sync_history", "Sync history to get latest server index"},
+			{4, "paginated_fetch", "Fetch all items via paginated API"},
+			{5, "rebuild_state", "Rebuild in-memory state from items"},
+			{6, "data_integrity", "Check data integrity and referential consistency"},
+			{7, "query_tests", "Run sample queries against rebuilt state"},
+		} {
+			report.Steps = append(report.Steps, diagStep{
+				Step:        sk.num,
+				Name:        sk.name,
+				Description: sk.desc,
+				Status:      "skipped",
+				Details:     map[string]any{"reason": "previous step failed"},
+				Log:         []string{},
+			})
+		}
+
+		report.Warnings = allWarnings
+		report.Errors = allErrors
+		report.Summary = buildDiagSummary(report.Steps)
+		return report
+	}
+
+	step1.Status = "pass"
+	step1.Details = map[string]any{
+		"account_status": string(verifyResp.Status),
+		"history_key":    verifyResp.HistoryKey,
+		"email":          maskEmail(verifyResp.Email),
+	}
+	step1.Log = append(step1.Log, fmt.Sprintf("Account status: %s", verifyResp.Status))
+	report.Steps = append(report.Steps, step1)
+
+	// Step 2: fetch_history
+	step2 := diagStep{
+		Step:        2,
+		Name:        "fetch_history",
+		Description: "Fetch account history object",
+		Log:         []string{},
+	}
+
+	start = time.Now()
+	history, err := client.OwnHistory()
+	step2.DurationMs = time.Since(start).Milliseconds()
+
+	if err != nil {
+		step2.Status = "fail"
+		step2.Details = map[string]any{"error": err.Error()}
+		step2.Log = append(step2.Log, fmt.Sprintf("Failed to fetch history: %v", err))
+		allErrors = append(allErrors, fmt.Sprintf("Step 2: fetch history failed: %v", err))
+		report.Steps = append(report.Steps, step2)
+
+		// Skip remaining steps
+		for _, sk := range []struct{ num int; name, desc string }{
+			{3, "sync_history", "Sync history to get latest server index"},
+			{4, "paginated_fetch", "Fetch all items via paginated API"},
+			{5, "rebuild_state", "Rebuild in-memory state from items"},
+			{6, "data_integrity", "Check data integrity and referential consistency"},
+			{7, "query_tests", "Run sample queries against rebuilt state"},
+		} {
+			report.Steps = append(report.Steps, diagStep{
+				Step:        sk.num,
+				Name:        sk.name,
+				Description: sk.desc,
+				Status:      "skipped",
+				Details:     map[string]any{"reason": "previous step failed"},
+				Log:         []string{},
+			})
+		}
+
+		report.Warnings = allWarnings
+		report.Errors = allErrors
+		report.Summary = buildDiagSummary(report.Steps)
+		return report
+	}
+
+	step2.Status = "pass"
+	step2.Details = map[string]any{
+		"history_id": history.ID,
+	}
+	step2.Log = append(step2.Log, fmt.Sprintf("History ID: %s", history.ID))
+	report.Steps = append(report.Steps, step2)
+
+	// Step 3: sync_history
+	step3 := diagStep{
+		Step:        3,
+		Name:        "sync_history",
+		Description: "Sync history to get latest server index",
+		Log:         []string{},
+	}
+
+	start = time.Now()
+	err = history.Sync()
+	step3.DurationMs = time.Since(start).Milliseconds()
+
+	if err != nil {
+		step3.Status = "fail"
+		step3.Details = map[string]any{"error": err.Error()}
+		step3.Log = append(step3.Log, fmt.Sprintf("History sync failed: %v", err))
+		allErrors = append(allErrors, fmt.Sprintf("Step 3: history sync failed: %v", err))
+		report.Steps = append(report.Steps, step3)
+
+		// Skip remaining steps
+		for _, sk := range []struct{ num int; name, desc string }{
+			{4, "paginated_fetch", "Fetch all items via paginated API"},
+			{5, "rebuild_state", "Rebuild in-memory state from items"},
+			{6, "data_integrity", "Check data integrity and referential consistency"},
+			{7, "query_tests", "Run sample queries against rebuilt state"},
+		} {
+			report.Steps = append(report.Steps, diagStep{
+				Step:        sk.num,
+				Name:        sk.name,
+				Description: sk.desc,
+				Status:      "skipped",
+				Details:     map[string]any{"reason": "previous step failed"},
+				Log:         []string{},
+			})
+		}
+
+		report.Warnings = allWarnings
+		report.Errors = allErrors
+		report.Summary = buildDiagSummary(report.Steps)
+		return report
+	}
+
+	step3.Status = "pass"
+	step3.Details = map[string]any{
+		"latest_server_index": history.LatestServerIndex,
+	}
+	step3.Log = append(step3.Log, fmt.Sprintf("Latest server index: %d", history.LatestServerIndex))
+	report.Steps = append(report.Steps, step3)
+
+	// Steps 4-7: delegated
+	t.diagnoseSteps4to7(history, report, &allWarnings, &allErrors)
+
+	report.Warnings = allWarnings
+	report.Errors = allErrors
+	report.Summary = buildDiagSummary(report.Steps)
+	return report
+}
+
+func (t *ThingsMCP) diagnoseSteps4to7(history *thingscloud.History, report *diagReport, warnings *[]string, errors *[]string) {
+}
+
+func buildDiagSummary(steps []diagStep) diagSummary {
+	s := diagSummary{TotalSteps: len(steps)}
+	for _, step := range steps {
+		s.TotalDurationMs += step.DurationMs
+		switch step.Status {
+		case "pass":
+			s.Passed++
+		case "warn":
+			s.Warnings++
+		case "fail":
+			s.Failed++
+		case "skipped":
+			s.Skipped++
+		}
+	}
+	return s
+}
+
+// ---------------------------------------------------------------------------
 // MCP Tool handlers
 // ---------------------------------------------------------------------------
 
