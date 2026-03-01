@@ -981,6 +981,8 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 	scheduledAfter := req.GetString("scheduled_after", "")
 	deadlineBefore := req.GetString("deadline_before", "")
 	deadlineAfter := req.GetString("deadline_after", "")
+	createdBefore := req.GetString("created_before", "")
+	createdAfter := req.GetString("created_after", "")
 	tagName := req.GetString("tag", "")
 	areaName := req.GetString("area", "")
 	projectName := req.GetString("project", "")
@@ -1034,6 +1036,19 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 			return errResult(fmt.Sprintf("invalid date: %s", deadlineAfter)), nil
 		}
 	}
+	var createdBeforeDate, createdAfterDate *time.Time
+	if createdBefore != "" {
+		createdBeforeDate = parseDate(createdBefore)
+		if createdBeforeDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", createdBefore)), nil
+		}
+	}
+	if createdAfter != "" {
+		createdAfterDate = parseDate(createdAfter)
+		if createdAfterDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", createdAfter)), nil
+		}
+	}
 
 	var tasks []TaskOutput
 	for _, task := range state.Tasks {
@@ -1075,6 +1090,17 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 		}
 		if deadlineAfterDate != nil {
 			if task.DeadlineDate == nil || !task.DeadlineDate.After(*deadlineAfterDate) {
+				continue
+			}
+		}
+		// Creation date filters (exclusive) — CreationDate is non-nullable, no nil check needed
+		if createdBeforeDate != nil {
+			if !task.CreationDate.Before(*createdBeforeDate) {
+				continue
+			}
+		}
+		if createdAfterDate != nil {
+			if !task.CreationDate.After(*createdAfterDate) {
 				continue
 			}
 		}
