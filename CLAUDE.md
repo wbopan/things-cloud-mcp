@@ -39,7 +39,7 @@ Before adding or modifying MCP tool definitions, check the [MCP builder skill](h
 
 **Wire format for writes** uses abbreviated JSON fields (`tt`=title, `nt`=note, `st`=schedule, `dd`=deadline). Notes require CRC32 checksums: `WireNote{_t: "tx", ch: crc32, v: text, t: 1}`. Use `newTaskUpdate()` builder for constructing updates.
 
-**Date handling**: `parseDate()` parses `YYYY-MM-DD` → `*time.Time`. Date filters are exclusive (strict `.Before()`/`.After()`). Output uses ISO8601. Zero-value dates (year ≤ 1970) are filtered from output.
+**Date handling**: `parseDate()` tries RFC3339 first (e.g. `2025-03-01T00:00:00+08:00`), then falls back to `YYYY-MM-DD` (UTC midnight). Date filters are exclusive (strict `.Before()`/`.After()`). Output uses ISO8601. Zero-value dates (year ≤ 1970) are filtered from output. Schedule/deadline dates are timezone-agnostic (Things stores date-only); `created_*` filters benefit from RFC3339 with timezone since `CreationDate` has full timestamp precision.
 
 **Recurrence**: User-facing strings (`daily`, `weekly:mon,wed`, `monthly:15`, `every 3 days`) converted to Things Cloud wire format (`rrv`, `fu`, `fa`, `of`, `wd`). Weekly uses `wd` (weekday bitmask), not `dy`.
 

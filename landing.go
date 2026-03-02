@@ -841,9 +841,12 @@ var DocsPageHTML = `<!DOCTYPE html>
       <tr><td><span class="param-name">scheduled_after</span></td><td class="param-type">string</td><td>YYYY-MM-DD</td></tr>
       <tr><td><span class="param-name">deadline_before</span></td><td class="param-type">string</td><td>YYYY-MM-DD</td></tr>
       <tr><td><span class="param-name">deadline_after</span></td><td class="param-type">string</td><td>YYYY-MM-DD</td></tr>
+      <tr><td><span class="param-name">created_before</span></td><td class="param-type">string</td><td>YYYY-MM-DD or RFC3339 with timezone</td></tr>
+      <tr><td><span class="param-name">created_after</span></td><td class="param-type">string</td><td>YYYY-MM-DD or RFC3339 with timezone</td></tr>
       <tr><td><span class="param-name">tag</span></td><td class="param-type">string</td><td>Filter by tag</td></tr>
       <tr><td><span class="param-name">area</span></td><td class="param-type">string</td><td>Filter by area</td></tr>
       <tr><td><span class="param-name">project</span></td><td class="param-type">string</td><td>Filter by project</td></tr>
+      <tr><td><span class="param-name">contains_text</span></td><td class="param-type">string</td><td>Filter by text in title or note</td></tr>
       <tr><td><span class="param-name">in_trash</span></td><td class="param-type">bool</td><td>Include trashed items (default false)</td></tr>
       <tr><td><span class="param-name">status</span></td><td class="param-type">enum</td><td>pending (default), completed, canceled</td></tr>
     </table>
@@ -874,6 +877,8 @@ var DocsPageHTML = `<!DOCTYPE html>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
       <tr><td><span class="param-name">status</span></td><td class="param-type">enum</td><td>pending (default), completed, canceled</td></tr>
+      <tr><td><span class="param-name">created_before</span></td><td class="param-type">string</td><td>YYYY-MM-DD or RFC3339 with timezone</td></tr>
+      <tr><td><span class="param-name">created_after</span></td><td class="param-type">string</td><td>YYYY-MM-DD or RFC3339 with timezone</td></tr>
     </table>
   </div>
 

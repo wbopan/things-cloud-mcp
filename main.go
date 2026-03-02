@@ -281,6 +281,9 @@ func parseWeekdays(s string) ([]map[string]any, error) {
 }
 
 func parseDate(s string) *time.Time {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return &t
+	}
 	t, err := time.Parse("2006-01-02", s)
 	if err != nil {
 		return nil
@@ -2525,8 +2528,8 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("scheduled_after", mcp.Description("Return tasks scheduled after this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("deadline_before", mcp.Description("Return tasks with deadline before this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("deadline_after", mcp.Description("Return tasks with deadline after this date (YYYY-MM-DD, exclusive)")),
-				mcp.WithString("created_before", mcp.Description("Return tasks created before this date (YYYY-MM-DD, exclusive)")),
-				mcp.WithString("created_after", mcp.Description("Return tasks created after this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("created_before", mcp.Description("Return tasks created before this date/time (YYYY-MM-DD or RFC3339 e.g. 2025-03-01T00:00:00+08:00, exclusive)")),
+				mcp.WithString("created_after", mcp.Description("Return tasks created after this date/time (YYYY-MM-DD or RFC3339 e.g. 2025-03-01T00:00:00+08:00, exclusive)")),
 				mcp.WithString("tag", mcp.Description("Filter by tag name (case-insensitive)")),
 				mcp.WithString("area", mcp.Description("Filter by area name (case-insensitive)")),
 				mcp.WithString("project", mcp.Description("Filter by project name (case-insensitive)")),
@@ -2573,8 +2576,8 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("status", mcp.Description("Filter by project status (default: pending — only active projects)"), mcp.Enum("pending", "completed", "canceled")),
-				mcp.WithString("created_before", mcp.Description("Return projects created before this date (YYYY-MM-DD, exclusive)")),
-				mcp.WithString("created_after", mcp.Description("Return projects created after this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("created_before", mcp.Description("Return projects created before this date/time (YYYY-MM-DD or RFC3339 e.g. 2025-03-01T00:00:00+08:00, exclusive)")),
+				mcp.WithString("created_after", mcp.Description("Return projects created after this date/time (YYYY-MM-DD or RFC3339 e.g. 2025-03-01T00:00:00+08:00, exclusive)")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleListProjects(ctx, req)
