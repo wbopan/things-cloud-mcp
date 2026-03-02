@@ -1620,6 +1620,8 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 	scheduledAfter := req.GetString("scheduled_after", "")
 	deadlineBefore := req.GetString("deadline_before", "")
 	deadlineAfter := req.GetString("deadline_after", "")
+	createdBefore := req.GetString("created_before", "")
+	createdAfter := req.GetString("created_after", "")
 	tagName := req.GetString("tag", "")
 	areaName := req.GetString("area", "")
 	projectName := req.GetString("project", "")
@@ -1674,6 +1676,19 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 			return errResult(fmt.Sprintf("invalid date: %s", deadlineAfter)), nil
 		}
 	}
+	var createdBeforeDate, createdAfterDate *time.Time
+	if createdBefore != "" {
+		createdBeforeDate = parseDate(createdBefore)
+		if createdBeforeDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", createdBefore)), nil
+		}
+	}
+	if createdAfter != "" {
+		createdAfterDate = parseDate(createdAfter)
+		if createdAfterDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", createdAfter)), nil
+		}
+	}
 
 	var tasks []TaskOutput
 	for _, task := range state.Tasks {
@@ -1726,6 +1741,17 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 		}
 		if deadlineAfterDate != nil {
 			if task.DeadlineDate == nil || !task.DeadlineDate.After(*deadlineAfterDate) {
+				continue
+			}
+		}
+		// Creation date filters (exclusive) — CreationDate is non-nullable, no nil check needed
+		if createdBeforeDate != nil {
+			if !task.CreationDate.Before(*createdBeforeDate) {
+				continue
+			}
+		}
+		if createdAfterDate != nil {
+			if !task.CreationDate.After(*createdAfterDate) {
 				continue
 			}
 		}
@@ -1888,6 +1914,24 @@ func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolReques
 	}
 	state := t.getState()
 	statusFilter := req.GetString("status", "pending")
+
+	createdBefore := req.GetString("created_before", "")
+	createdAfter := req.GetString("created_after", "")
+
+	var createdBeforeDate, createdAfterDate *time.Time
+	if createdBefore != "" {
+		createdBeforeDate = parseDate(createdBefore)
+		if createdBeforeDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", createdBefore)), nil
+		}
+	}
+	if createdAfter != "" {
+		createdAfterDate = parseDate(createdAfter)
+		if createdAfterDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", createdAfter)), nil
+		}
+	}
+
 	var projects []TaskOutput
 	for _, task := range state.Tasks {
 		if task.Type != thingscloud.TaskTypeProject || task.InTrash {
@@ -1906,6 +1950,12 @@ func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolReques
 			if task.Status != 0 {
 				continue
 			}
+		}
+		if createdBeforeDate != nil && !task.CreationDate.Before(*createdBeforeDate) {
+			continue
+		}
+		if createdAfterDate != nil && !task.CreationDate.After(*createdAfterDate) {
+			continue
 		}
 		projects = append(projects, t.taskToOutput(task))
 	}
@@ -2475,6 +2525,8 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("scheduled_after", mcp.Description("Return tasks scheduled after this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("deadline_before", mcp.Description("Return tasks with deadline before this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("deadline_after", mcp.Description("Return tasks with deadline after this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("created_before", mcp.Description("Return tasks created before this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("created_after", mcp.Description("Return tasks created after this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("tag", mcp.Description("Filter by tag name (case-insensitive)")),
 				mcp.WithString("area", mcp.Description("Filter by area name (case-insensitive)")),
 				mcp.WithString("project", mcp.Description("Filter by project name (case-insensitive)")),
@@ -2521,6 +2573,8 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("status", mcp.Description("Filter by project status (default: pending — only active projects)"), mcp.Enum("pending", "completed", "canceled")),
+				mcp.WithString("created_before", mcp.Description("Return projects created before this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("created_after", mcp.Description("Return projects created after this date (YYYY-MM-DD, exclusive)")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleListProjects(ctx, req)
