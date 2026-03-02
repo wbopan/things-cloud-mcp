@@ -2871,7 +2871,7 @@ func main() {
 
 	mcpServer := server.NewMCPServer(
 		"Things Cloud MCP",
-		"1.1.0",
+		"1.1.1",
 		server.WithToolCapabilities(false),
 		server.WithHooks(hooks),
 		server.WithInstructions("Things Cloud MCP server for managing Things 3 tasks, projects, areas, and tags. "+
