@@ -1177,22 +1177,85 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 		LatestServerIndex int    `json:"latestServerIndex"`
 		IsOwnHistory      bool   `json:"isOwnHistory"`
 		Selected          bool   `json:"selected"`
+		NewestItemDate    string `json:"newestItemDate,omitempty"`
 	}
 	var allHistories []historyInfo
-	histories, _ := client.Histories()
+	histories, historiesErr := client.Histories()
+	if historiesErr != nil {
+		w := fmt.Sprintf("Histories() returned error: %v", historiesErr)
+		step2.Log = append(step2.Log, fmt.Sprintf("Warning: %s", w))
+		allWarnings = append(allWarnings, fmt.Sprintf("Step 2: %s", w))
+	}
+	if historiesErr == nil && len(histories) == 0 {
+		w := "own-history-keys returned 0 keys; falling back to account history key from /verify"
+		step2.Log = append(step2.Log, fmt.Sprintf("Warning: %s", w))
+		allWarnings = append(allWarnings, fmt.Sprintf("Step 2: %s", w))
+	}
 	for _, h := range histories {
 		full, ferr := client.History(h.ID)
 		if ferr != nil {
 			step2.Log = append(step2.Log, fmt.Sprintf("History %s: failed to fetch metadata: %v", h.ID, ferr))
 			continue
 		}
-		allHistories = append(allHistories, historyInfo{
+		hi := historyInfo{
 			ID:                full.ID,
 			LatestServerIndex: full.LatestServerIndex,
 			IsOwnHistory:      full.ID == ownHistoryID,
 			Selected:          full.ID == history.ID,
-		})
-		step2.Log = append(step2.Log, fmt.Sprintf("History %s: serverIndex=%d, isOwnHistory=%v, selected=%v", full.ID, full.LatestServerIndex, full.ID == ownHistoryID, full.ID == history.ID))
+		}
+		// Peek at recent items to find newest creation date for this history key
+		if full.LatestServerIndex > 0 {
+			peekStart := full.LatestServerIndex - 5
+			if peekStart < 0 {
+				peekStart = 0
+			}
+			items, _, ierr := full.Items(thingscloud.ItemsOptions{StartIndex: peekStart})
+			if ierr == nil {
+				var newestDate time.Time
+				for _, item := range items {
+					if item.Kind != thingscloud.ItemKindTask {
+						continue
+					}
+					var payload thingscloud.TaskActionItemPayload
+					if uerr := json.Unmarshal(item.P, &payload); uerr != nil {
+						continue
+					}
+					if payload.CreationDate != nil {
+						cd := payload.CreationDate.Time()
+						if cd.After(newestDate) {
+							newestDate = *cd
+						}
+					}
+				}
+				if !newestDate.IsZero() {
+					hi.NewestItemDate = newestDate.Format("2006-01-02")
+				}
+			} else {
+				step2.Log = append(step2.Log, fmt.Sprintf("History %s: failed to peek items: %v", full.ID, ierr))
+			}
+		}
+		allHistories = append(allHistories, hi)
+		logLine := fmt.Sprintf("History %s: serverIndex=%d, isOwnHistory=%v, selected=%v", full.ID, hi.LatestServerIndex, full.ID == ownHistoryID, full.ID == history.ID)
+		if hi.NewestItemDate != "" {
+			logLine += fmt.Sprintf(", newestItemDate=%s", hi.NewestItemDate)
+		}
+		step2.Log = append(step2.Log, logLine)
+	}
+
+	// Check if account history key appears in own-history-keys list
+	if len(histories) > 0 {
+		found := false
+		for _, hi := range allHistories {
+			if hi.ID == ownHistoryID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			w := fmt.Sprintf("Account history key (%s) not found in own-history-keys list", ownHistoryID)
+			step2.Log = append(step2.Log, fmt.Sprintf("Warning: %s", w))
+			allWarnings = append(allWarnings, fmt.Sprintf("Step 2: %s", w))
+		}
 	}
 
 	step2.DurationMs = time.Since(start).Milliseconds()
@@ -1439,12 +1502,15 @@ func (t *ThingsMCP) diagnoseDataIntegrity(state *memory.State, report *diagRepor
 
 	// Detect anomalies
 	var stepWarnings []string
-	currentYear := time.Now().Year()
 
-	if !first && newest.Year() < currentYear-1 {
-		w := fmt.Sprintf("No tasks found after %d", newest.Year())
-		stepWarnings = append(stepWarnings, w)
-		step.Log = append(step.Log, fmt.Sprintf("Warning: %s", w))
+	if !first {
+		daysSinceNewest := int(time.Since(newest).Hours() / 24)
+		if daysSinceNewest > 3 {
+			w := fmt.Sprintf("Newest task created %d days ago (%s)",
+				daysSinceNewest, newest.Format("2006-01-02"))
+			stepWarnings = append(stepWarnings, w)
+			step.Log = append(step.Log, fmt.Sprintf("Warning: %s", w))
+		}
 	}
 
 	if len(years) >= 2 {
@@ -1476,6 +1542,7 @@ func (t *ThingsMCP) diagnoseDataIntegrity(state *memory.State, report *diagRepor
 	if !first {
 		details["oldestTask"] = oldest.Format("2006-01-02")
 		details["newestTask"] = newest.Format("2006-01-02")
+		details["daysSinceNewest"] = int(time.Since(newest).Hours() / 24)
 	}
 	if len(stepWarnings) > 0 {
 		details["warnings"] = stepWarnings
