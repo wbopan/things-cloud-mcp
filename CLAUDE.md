@@ -47,6 +47,20 @@ Before adding or modifying MCP tool definitions, check the [MCP builder skill](h
 
 **Diagnostic helpers**: `diagStepDefs` defines step metadata, `addSkippedSteps(report, fromStep)` marks remaining steps as skipped on failure, `extractCredentials(ctx, um)` resolves email/password from context (shared by `getUserFromContext` and `things_diagnose`). JSON output uses camelCase keys throughout.
 
+## Live Testing
+
+The deployed instance runs as a systemd user service on port 28063. Test account for calling MCP tools against the live server:
+
+```bash
+# Call any MCP tool (e.g. things_diagnose)
+curl -s -X POST http://localhost:28063/mcp \
+  -H "Authorization: Basic $(echo -n 'pixelwenbo@gmail.com:bmp6125388th' | base64)" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"things_diagnose","arguments":{}}}'
+```
+
+Deploy after changes: `/usr/local/go/bin/go build -o ~/things-cloud-mcp/things-cloud-mcp . && systemctl --user restart things-mcp`
+
 ## OAuth (oauth.go)
 
 OAuth 2.1 with PKCE. State persisted in SQLite (`DATA_DIR/oauth.db`): clients, auth codes, refresh tokens, JWT secret. Endpoints: `/authorize`, `/token`, `/register`, `/.well-known/oauth-*`.

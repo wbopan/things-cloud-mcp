@@ -1194,6 +1194,7 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 		"email":         maskEmail(verifyResp.Email),
 	}
 	step1.Log = append(step1.Log, fmt.Sprintf("Account status: %s", verifyResp.Status))
+	step1.Log = append(step1.Log, fmt.Sprintf("History key from /verify: %s", verifyResp.HistoryKey))
 	report.Steps = append(report.Steps, step1)
 
 	// Step 2: fetch_history — select best history via bestHistory(), then
@@ -1545,6 +1546,10 @@ func (t *ThingsMCP) diagnoseDataIntegrity(state *memory.State, report *diagRepor
 	yearDist := strings.Join(yearParts, ", ")
 
 	step.Log = append(step.Log, fmt.Sprintf("Task status counts — active=%d, completed=%d, canceled=%d, trashed=%d", active, completed, canceled, trashed))
+	if !first {
+		step.Log = append(step.Log, fmt.Sprintf("Oldest task: %s", oldest.Format("2006-01-02")))
+		step.Log = append(step.Log, fmt.Sprintf("Newest task: %s", newest.Format("2006-01-02")))
+	}
 	step.Log = append(step.Log, fmt.Sprintf("Year distribution: %s", yearDist))
 
 	// Detect anomalies
@@ -1553,6 +1558,7 @@ func (t *ThingsMCP) diagnoseDataIntegrity(state *memory.State, report *diagRepor
 
 	if !first {
 		daysSinceNewest = int(time.Since(newest).Hours() / 24)
+		step.Log = append(step.Log, fmt.Sprintf("Days since newest task: %d", daysSinceNewest))
 		if daysSinceNewest > 3 {
 			w := fmt.Sprintf("Newest task created %d days ago (%s)",
 				daysSinceNewest, newest.Format("2006-01-02"))
