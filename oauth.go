@@ -91,6 +91,10 @@ func NewOAuthServer(um *UserManager, dataDir string) *OAuthServer {
 			client_id TEXT NOT NULL, expires_at TEXT NOT NULL
 		)`,
 		`CREATE TABLE IF NOT EXISTS credentials (email TEXT PRIMARY KEY, password TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS diagnoses (
+			token TEXT PRIMARY KEY, report_json TEXT NOT NULL,
+			email TEXT NOT NULL, created_at TEXT NOT NULL
+		)`,
 	} {
 		if _, err := db.Exec(ddl); err != nil {
 			log.Fatalf("Failed to create table: %v", err)

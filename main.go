@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -700,6 +701,14 @@ func NewThingsMCPForUser(email, password string) (*ThingsMCP, error) {
 type contextKey string
 
 const userContextKey contextKey = "things_user"
+const baseURLContextKey contextKey = "base_url"
+
+func getBaseURLFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(baseURLContextKey).(string); ok {
+		return v
+	}
+	return ""
+}
 
 type UserInfo struct {
 	Email    string
@@ -708,9 +717,10 @@ type UserInfo struct {
 }
 
 type UserManager struct {
-	users map[string]*ThingsMCP // keyed by email
-	oauth *OAuthServer          // set after OAuthServer is created
-	mu    sync.RWMutex
+	users     map[string]*ThingsMCP // keyed by email
+	oauth     *OAuthServer          // set after OAuthServer is created
+	diagStore *DiagStore            // set after OAuthServer is created
+	mu        sync.RWMutex
 }
 
 func NewUserManager() *UserManager {
@@ -745,6 +755,8 @@ func (um *UserManager) GetOrCreateUser(email, password string) (*ThingsMCP, erro
 
 // httpContextFunc extracts user identity from the HTTP request and stores it in context.
 func (um *UserManager) httpContextFunc(ctx context.Context, r *http.Request) context.Context {
+	ctx = context.WithValue(ctx, baseURLContextKey, getBaseURL(r))
+
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		return ctx
@@ -1042,6 +1054,46 @@ type diagReport struct {
 	Errors   []string    `json:"errors"`
 }
 
+// DiagStore handles persistence of shareable diagnosis reports.
+type DiagStore struct {
+	db *sql.DB
+}
+
+func (ds *DiagStore) Store(email string, report *diagReport) (string, error) {
+	token := uuid.New().String()
+	reportJSON, err := json.Marshal(report)
+	if err != nil {
+		return "", fmt.Errorf("marshal report: %w", err)
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err = ds.db.Exec(
+		`INSERT INTO diagnoses (token, report_json, email, created_at) VALUES (?, ?, ?, ?)`,
+		token, string(reportJSON), maskEmail(email), now,
+	)
+	if err != nil {
+		return "", fmt.Errorf("store report: %w", err)
+	}
+	// Lazy cleanup: delete reports older than 7 days
+	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour).Format(time.RFC3339)
+	ds.db.Exec(`DELETE FROM diagnoses WHERE created_at < ?`, cutoff)
+	return token, nil
+}
+
+func (ds *DiagStore) Load(token string) (reportJSON string, email string, createdAt time.Time, err error) {
+	var createdAtStr string
+	err = ds.db.QueryRow(
+		`SELECT report_json, email, created_at FROM diagnoses WHERE token = ?`, token,
+	).Scan(&reportJSON, &email, &createdAtStr)
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	createdAt, _ = time.Parse(time.RFC3339, createdAtStr)
+	if time.Since(createdAt) > 7*24*time.Hour {
+		return "", "", time.Time{}, fmt.Errorf("report expired")
+	}
+	return reportJSON, email, createdAt, nil
+}
+
 func maskEmail(email string) string {
 	parts := strings.SplitN(email, "@", 2)
 	if len(parts) != 2 || len(parts[0]) == 0 {
@@ -1191,6 +1243,7 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 		step2.Log = append(step2.Log, fmt.Sprintf("Warning: %s", w))
 		allWarnings = append(allWarnings, fmt.Sprintf("Step 2: %s", w))
 	}
+	ownKeyFound := false
 	for _, h := range histories {
 		full, ferr := client.History(h.ID)
 		if ferr != nil {
@@ -1202,6 +1255,9 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 			LatestServerIndex: full.LatestServerIndex,
 			IsOwnHistory:      full.ID == ownHistoryID,
 			Selected:          full.ID == history.ID,
+		}
+		if hi.IsOwnHistory {
+			ownKeyFound = true
 		}
 		// Peek at recent items to find newest creation date for this history key
 		if full.LatestServerIndex > 0 {
@@ -1235,7 +1291,7 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 			}
 		}
 		allHistories = append(allHistories, hi)
-		logLine := fmt.Sprintf("History %s: serverIndex=%d, isOwnHistory=%v, selected=%v", full.ID, hi.LatestServerIndex, full.ID == ownHistoryID, full.ID == history.ID)
+		logLine := fmt.Sprintf("History %s: serverIndex=%d, isOwnHistory=%v, selected=%v", full.ID, hi.LatestServerIndex, hi.IsOwnHistory, hi.Selected)
 		if hi.NewestItemDate != "" {
 			logLine += fmt.Sprintf(", newestItemDate=%s", hi.NewestItemDate)
 		}
@@ -1243,19 +1299,10 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 	}
 
 	// Check if account history key appears in own-history-keys list
-	if len(histories) > 0 {
-		found := false
-		for _, hi := range allHistories {
-			if hi.ID == ownHistoryID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			w := fmt.Sprintf("Account history key (%s) not found in own-history-keys list", ownHistoryID)
-			step2.Log = append(step2.Log, fmt.Sprintf("Warning: %s", w))
-			allWarnings = append(allWarnings, fmt.Sprintf("Step 2: %s", w))
-		}
+	if len(histories) > 0 && !ownKeyFound {
+		w := fmt.Sprintf("Account history key (%s) not found in own-history-keys list", ownHistoryID)
+		step2.Log = append(step2.Log, fmt.Sprintf("Warning: %s", w))
+		allWarnings = append(allWarnings, fmt.Sprintf("Step 2: %s", w))
 	}
 
 	step2.DurationMs = time.Since(start).Milliseconds()
@@ -1502,9 +1549,10 @@ func (t *ThingsMCP) diagnoseDataIntegrity(state *memory.State, report *diagRepor
 
 	// Detect anomalies
 	var stepWarnings []string
+	var daysSinceNewest int
 
 	if !first {
-		daysSinceNewest := int(time.Since(newest).Hours() / 24)
+		daysSinceNewest = int(time.Since(newest).Hours() / 24)
 		if daysSinceNewest > 3 {
 			w := fmt.Sprintf("Newest task created %d days ago (%s)",
 				daysSinceNewest, newest.Format("2006-01-02"))
@@ -1542,7 +1590,7 @@ func (t *ThingsMCP) diagnoseDataIntegrity(state *memory.State, report *diagRepor
 	if !first {
 		details["oldestTask"] = oldest.Format("2006-01-02")
 		details["newestTask"] = newest.Format("2006-01-02")
-		details["daysSinceNewest"] = int(time.Since(newest).Hours() / 24)
+		details["daysSinceNewest"] = daysSinceNewest
 	}
 	if len(stepWarnings) > 0 {
 		details["warnings"] = stepWarnings
@@ -2908,10 +2956,33 @@ func defineTools(um *UserManager) []server.ServerTool {
 					return errResult(err.Error()), nil
 				}
 				report := t.handleDiagnose(email, password)
-				return jsonResult(report), nil
+
+				// Store report and generate shareable URL
+				type diagResponse struct {
+					*diagReport
+					ShareURL string `json:"shareUrl,omitempty"`
+				}
+				resp := diagResponse{diagReport: report}
+				if um.diagStore != nil {
+					if token, storeErr := um.diagStore.Store(email, report); storeErr == nil {
+						if base := getBaseURLFromContext(ctx); base != "" {
+							resp.ShareURL = base + "/d/" + token
+						}
+					}
+				}
+				return jsonResult(resp), nil
 			},
 		},
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Diagnosis report page
+// ---------------------------------------------------------------------------
+
+func serveDiagReportPage(w http.ResponseWriter, reportJSON string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Write([]byte(reportJSON))
 }
 
 // ---------------------------------------------------------------------------
@@ -2931,6 +3002,7 @@ func main() {
 	}
 	oauth := NewOAuthServer(um, dataDir)
 	um.oauth = oauth
+	um.diagStore = &DiagStore{db: oauth.db}
 
 	hooks := &server.Hooks{}
 	hooks.AddAfterInitialize(func(ctx context.Context, id any, message *mcp.InitializeRequest, result *mcp.InitializeResult) {
@@ -3008,6 +3080,23 @@ func main() {
 	mux.HandleFunc("/how-it-works", handleHowItWorksPage)
 	mux.HandleFunc("/favicon.ico", handleFavicon)
 	mux.HandleFunc("/favicon.svg", handleFavicon)
+	mux.HandleFunc("/d/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		token := strings.TrimPrefix(r.URL.Path, "/d/")
+		if _, err := uuid.Parse(token); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		reportJSON, _, _, err := um.diagStore.Load(token)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		serveDiagReportPage(w, reportJSON)
+	})
 
 	httpServer := &http.Server{
 		Addr:    addr,

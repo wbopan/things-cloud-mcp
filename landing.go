@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+
 // sharedCSS contains the CSS shared between the landing page and docs page.
 const sharedCSS = `*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
