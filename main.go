@@ -1306,14 +1306,29 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 		allWarnings = append(allWarnings, fmt.Sprintf("Step 2: %s", w))
 	}
 
+	// If Histories() failed, still try to fetch metadata for the selected history
+	var selectedServerIndex int
+	if len(histories) == 0 {
+		meta, metaErr := client.History(history.ID)
+		if metaErr == nil {
+			selectedServerIndex = meta.LatestServerIndex
+			step2.Log = append(step2.Log, fmt.Sprintf("Selected history metadata: serverIndex=%d", meta.LatestServerIndex))
+		} else {
+			step2.Log = append(step2.Log, fmt.Sprintf("Selected history metadata fetch failed: %v", metaErr))
+		}
+	} else {
+		selectedServerIndex = history.LatestServerIndex
+	}
+
 	step2.DurationMs = time.Since(start).Milliseconds()
 	step2.Status = "pass"
 	step2.Details = map[string]any{
-		"historyCount":        len(histories),
-		"selectedHistory":     history.ID,
-		"ownHistoryKey":       ownHistoryID,
-		"selectedIsSameAsOwn": history.ID == ownHistoryID,
-		"allHistories":        allHistories,
+		"historyCount":            len(histories),
+		"selectedHistory":         history.ID,
+		"selectedServerIndexMeta": selectedServerIndex,
+		"ownHistoryKey":           ownHistoryID,
+		"selectedIsSameAsOwn":     history.ID == ownHistoryID,
+		"allHistories":            allHistories,
 	}
 	if history.ID != ownHistoryID && len(histories) > 1 {
 		step2.Log = append(step2.Log, fmt.Sprintf("WARNING: Selected history %s differs from OwnHistory %s — account may have multiple sync streams", history.ID, ownHistoryID))
@@ -1330,6 +1345,7 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 		Log:         []string{},
 	}
 
+	preSyncIndex := history.LatestServerIndex
 	start = time.Now()
 	err = history.Sync()
 	step3.DurationMs = time.Since(start).Milliseconds()
@@ -1350,9 +1366,10 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 
 	step3.Status = "pass"
 	step3.Details = map[string]any{
-		"latestServerIndex": history.LatestServerIndex,
+		"preSyncServerIndex":  preSyncIndex,
+		"postSyncServerIndex": history.LatestServerIndex,
 	}
-	step3.Log = append(step3.Log, fmt.Sprintf("Latest server index: %d", history.LatestServerIndex))
+	step3.Log = append(step3.Log, fmt.Sprintf("Server index: %d → %d (after sync)", preSyncIndex, history.LatestServerIndex))
 	report.Steps = append(report.Steps, step3)
 
 	// Steps 4-7: delegated
@@ -1436,6 +1453,59 @@ func (t *ThingsMCP) diagnoseSteps4to7(history *thingscloud.History, report *diag
 			"finalServerIndex":  finalServerIndex,
 		}
 		step4.Log = append(step4.Log, fmt.Sprintf("Total items fetched: %d across %d pages", len(allItems), len(pages)))
+
+		// Report item type distribution and tail items
+		kindCounts := map[string]int{}
+		for _, item := range allItems {
+			kindCounts[string(item.Kind)]++
+		}
+		step4.Log = append(step4.Log, fmt.Sprintf("Item types: %v", kindCounts))
+		step4.Details.(map[string]any)["itemTypes"] = kindCounts
+
+		// Report last 5 items (the tail of the stream)
+		type tailItem struct {
+			Kind         string `json:"kind"`
+			Action       int    `json:"action"`
+			CreationDate string `json:"creationDate,omitempty"`
+			Title        string `json:"title,omitempty"`
+		}
+		var tail []tailItem
+		tailStart := len(allItems) - 5
+		if tailStart < 0 {
+			tailStart = 0
+		}
+		for _, item := range allItems[tailStart:] {
+			ti := tailItem{Kind: string(item.Kind), Action: int(item.Action)}
+			if item.Kind == thingscloud.ItemKindTask {
+				var payload thingscloud.TaskActionItemPayload
+				if uerr := json.Unmarshal(item.P, &payload); uerr == nil {
+					if payload.CreationDate != nil {
+						cd := payload.CreationDate.Time()
+						ti.CreationDate = cd.Format("2006-01-02T15:04:05Z")
+					}
+					if payload.Title != nil {
+						t := *payload.Title
+						if len(t) > 30 {
+							t = t[:30] + "..."
+						}
+						ti.Title = t
+					}
+				}
+			}
+			tail = append(tail, ti)
+		}
+		step4.Details.(map[string]any)["tailItems"] = tail
+		for _, ti := range tail {
+			desc := ti.Kind
+			if ti.CreationDate != "" {
+				desc += " created=" + ti.CreationDate
+			}
+			if ti.Title != "" {
+				desc += " title=" + ti.Title
+			}
+			step4.Log = append(step4.Log, fmt.Sprintf("Tail item: %s (action=%d)", desc, ti.Action))
+		}
+
 		report.Steps = append(report.Steps, step4)
 	}
 
