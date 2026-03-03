@@ -54,7 +54,7 @@ The deployed instance runs as a systemd user service on port 28063. Test account
 ```bash
 # Call any MCP tool (e.g. things_diagnose)
 curl -s -X POST http://localhost:28063/mcp \
-  -H "Authorization: Basic $(echo -n 'pixelwenbo@gmail.com:***REDACTED***' | base64)" \
+  -H "Authorization: Basic $(echo -n '<EMAIL>:<PASSWORD>' | base64)" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"things_diagnose","arguments":{}}}'
 ```
