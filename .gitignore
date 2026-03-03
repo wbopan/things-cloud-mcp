@@ -3,3 +3,4 @@ cleanup-tool
 cmd/
 data/
 .worktrees/
+CLAUDE.md
