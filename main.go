@@ -687,7 +687,7 @@ func NewThingsMCPForUser(email, password string) (*ThingsMCP, error) {
 	log.Printf("History synced for %s (id=%s, serverIndex=%d).", email, history.ID, history.LatestServerIndex)
 
 	t := &ThingsMCP{client: c, history: history}
-	if err := t.rebuildState(); err != nil {
+	if err := t.fullRebuild(); err != nil {
 		return nil, err
 	}
 
@@ -817,11 +817,14 @@ func getUserFromContext(ctx context.Context, um *UserManager) (*ThingsMCP, error
 	return um.GetOrCreateUser(info.Email, info.Password)
 }
 
-func (t *ThingsMCP) rebuildState() error {
-	var allItems []thingscloud.Item
+// fullRebuild fetches ALL items from index 0 and creates a fresh state.
+// Used for initial sync and as fallback when incremental sync fails.
+func (t *ThingsMCP) fullRebuild() error {
+	t.history.LoadedServerIndex = 0
 	startIndex := 0
+	var allItems []thingscloud.Item
 	for {
-		items, _, err := t.history.Items(thingscloud.ItemsOptions{StartIndex: startIndex})
+		items, hasMore, err := t.history.Items(thingscloud.ItemsOptions{StartIndex: startIndex})
 		if err != nil {
 			return fmt.Errorf("fetch items: %w", err)
 		}
@@ -829,9 +832,10 @@ func (t *ThingsMCP) rebuildState() error {
 			break
 		}
 		allItems = append(allItems, items...)
-		// Use server's current-item-index as next start position
-		// (not LoadedServerIndex which counts batch entries, not server indices)
-		startIndex = t.history.LatestServerIndex
+		if !hasMore {
+			break
+		}
+		startIndex = t.history.LoadedServerIndex
 	}
 
 	state := memory.NewState()
@@ -841,10 +845,37 @@ func (t *ThingsMCP) rebuildState() error {
 	t.state = state
 	t.mu.Unlock()
 
-	taskCount := len(state.Tasks)
-	areaCount := len(state.Areas)
-	tagCount := len(state.Tags)
-	log.Printf("State rebuilt: %d tasks, %d areas, %d tags", taskCount, areaCount, tagCount)
+	log.Printf("Full rebuild: %d tasks, %d areas, %d tags",
+		len(state.Tasks), len(state.Areas), len(state.Tags))
+	return nil
+}
+
+// incrementalSync fetches only commits newer than LoadedServerIndex
+// and applies them to the existing state.
+func (t *ThingsMCP) incrementalSync() error {
+	startIndex := t.history.LoadedServerIndex
+	var delta []thingscloud.Item
+	for {
+		items, hasMore, err := t.history.Items(thingscloud.ItemsOptions{StartIndex: startIndex})
+		if err != nil {
+			log.Printf("Incremental fetch failed at index %d, falling back to full rebuild: %v", startIndex, err)
+			return t.fullRebuild()
+		}
+		if len(items) == 0 {
+			break
+		}
+		delta = append(delta, items...)
+		if !hasMore {
+			break
+		}
+		startIndex = t.history.LoadedServerIndex
+	}
+
+	t.mu.Lock()
+	t.state.Update(delta...)
+	t.mu.Unlock()
+
+	log.Printf("Incremental sync: applied %d new items", len(delta))
 	return nil
 }
 
@@ -858,7 +889,19 @@ func (t *ThingsMCP) syncAndRebuild() error {
 	if err := t.history.Sync(); err != nil {
 		return fmt.Errorf("sync: %w", err)
 	}
-	return t.rebuildState()
+
+	// First time (no state built yet) → full rebuild
+	if t.state == nil {
+		return t.fullRebuild()
+	}
+
+	// Already up to date → skip
+	if t.history.LoadedServerIndex >= t.history.LatestServerIndex {
+		return nil
+	}
+
+	// Delta available → incremental sync
+	return t.incrementalSync()
 }
 
 func (t *ThingsMCP) writeAndSync(items ...thingscloud.Identifiable) error {
@@ -868,7 +911,7 @@ func (t *ThingsMCP) writeAndSync(items ...thingscloud.Identifiable) error {
 	if err := t.history.Write(items...); err != nil {
 		return err
 	}
-	return t.rebuildState()
+	return t.fullRebuild()
 }
 
 // ---------------------------------------------------------------------------
