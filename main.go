@@ -871,6 +871,10 @@ func (t *ThingsMCP) incrementalSync() error {
 		startIndex = t.history.LoadedServerIndex
 	}
 
+	if len(delta) == 0 {
+		return nil
+	}
+
 	t.mu.Lock()
 	t.state.Update(delta...)
 	t.mu.Unlock()
@@ -885,6 +889,9 @@ func (t *ThingsMCP) getState() *memory.State {
 	return t.state
 }
 
+// syncAndRebuild checks for new history commits and updates state.
+// Called from wrap() which serializes all MCP tool calls per-user,
+// so t.state and t.history fields are safe to read without a lock here.
 func (t *ThingsMCP) syncAndRebuild() error {
 	if err := t.history.Sync(); err != nil {
 		return fmt.Errorf("sync: %w", err)
