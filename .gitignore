@@ -1,6 +1,8 @@
 things-mcp
+things-cloud-mcp
 cleanup-tool
 cmd/
 data/
 .worktrees/
+.claude/skills/
 CLAUDE.md
