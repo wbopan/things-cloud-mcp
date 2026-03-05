@@ -360,7 +360,7 @@ func TestScheduleString(t *testing.T) {
 	}{
 		{"st=0 → inbox", thingscloud.TaskScheduleInbox, nil, "inbox"},
 		{"st=1 + no date → anytime", thingscloud.TaskScheduleAnytime, nil, "anytime"},
-		{"st=1 + past date → today", thingscloud.TaskScheduleAnytime, &past, "today"},
+		{"st=1 + past date → anytime", thingscloud.TaskScheduleAnytime, &past, "anytime"},
 		{"st=1 + future date → anytime", thingscloud.TaskScheduleAnytime, &future, "anytime"},
 		{"st=2 + no date → someday", thingscloud.TaskScheduleSomeday, nil, "someday"},
 		{"st=2 + date → upcoming", thingscloud.TaskScheduleSomeday, &future, "upcoming"},

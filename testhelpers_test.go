@@ -155,8 +155,8 @@ func newTestThingsMCP(t *testing.T, fc *fakeCloud) *ThingsMCP {
 	}
 
 	tmcp := &ThingsMCP{client: c, history: history}
-	if err := tmcp.rebuildState(); err != nil {
-		t.Fatalf("rebuildState failed: %v", err)
+	if err := tmcp.syncAndRebuild(); err != nil {
+		t.Fatalf("syncAndRebuild failed: %v", err)
 	}
 	return tmcp
 }

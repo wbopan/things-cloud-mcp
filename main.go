@@ -2183,11 +2183,61 @@ func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolReques
 		return errResult(fmt.Sprintf("sync: %v", err)), nil
 	}
 	state := t.getState()
-	statusFilter := req.GetString("status", "pending")
 
+	schedule := req.GetString("schedule", "")
+	scheduledBefore := req.GetString("scheduled_before", "")
+	scheduledAfter := req.GetString("scheduled_after", "")
+	deadlineBefore := req.GetString("deadline_before", "")
+	deadlineAfter := req.GetString("deadline_after", "")
 	createdBefore := req.GetString("created_before", "")
 	createdAfter := req.GetString("created_after", "")
+	tagName := req.GetString("tag", "")
+	areaName := req.GetString("area", "")
+	containsText := strings.ToLower(req.GetString("contains_text", ""))
+	inTrash := req.GetBool("in_trash", false)
+	statusFilter := req.GetString("status", "pending")
 
+	// Pre-resolve names to UUIDs
+	var areaUUID, tagUUID string
+	if areaName != "" {
+		areaUUID = t.findAreaUUID(areaName)
+		if areaUUID == "" {
+			return errResult(fmt.Sprintf("area not found: %s", areaName)), nil
+		}
+	}
+	if tagName != "" {
+		tagUUID = t.findTagUUID(tagName)
+		if tagUUID == "" {
+			return errResult(fmt.Sprintf("tag not found: %s", tagName)), nil
+		}
+	}
+
+	// Parse date filters
+	var scheduledBeforeDate, scheduledAfterDate, deadlineBeforeDate, deadlineAfterDate *time.Time
+	if scheduledBefore != "" {
+		scheduledBeforeDate = parseDate(scheduledBefore)
+		if scheduledBeforeDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", scheduledBefore)), nil
+		}
+	}
+	if scheduledAfter != "" {
+		scheduledAfterDate = parseDate(scheduledAfter)
+		if scheduledAfterDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", scheduledAfter)), nil
+		}
+	}
+	if deadlineBefore != "" {
+		deadlineBeforeDate = parseDate(deadlineBefore)
+		if deadlineBeforeDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", deadlineBefore)), nil
+		}
+	}
+	if deadlineAfter != "" {
+		deadlineAfterDate = parseDate(deadlineAfter)
+		if deadlineAfterDate == nil {
+			return errResult(fmt.Sprintf("invalid date: %s", deadlineAfter)), nil
+		}
+	}
 	var createdBeforeDate, createdAfterDate *time.Time
 	if createdBefore != "" {
 		createdBeforeDate = parseDate(createdBefore)
@@ -2204,7 +2254,10 @@ func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolReques
 
 	var projects []TaskOutput
 	for _, task := range state.Tasks {
-		if task.Type != thingscloud.TaskTypeProject || task.InTrash {
+		if task.Type != thingscloud.TaskTypeProject {
+			continue
+		}
+		if !inTrash && task.InTrash {
 			continue
 		}
 		switch statusFilter {
@@ -2216,17 +2269,69 @@ func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolReques
 			if task.Status != 2 {
 				continue
 			}
-		default:
+		default: // "pending"
 			if task.Status != 0 {
 				continue
 			}
 		}
-		if createdBeforeDate != nil && !task.CreationDate.Before(*createdBeforeDate) {
+
+		// Schedule filter
+		if schedule != "" {
+			if schedule == "today" {
+				if !isScheduledForTodayOrPast(task.Schedule, task.ScheduledDate) {
+					continue
+				}
+			} else {
+				taskSchedule := scheduleString(task.Schedule, task.ScheduledDate)
+				if taskSchedule != schedule {
+					continue
+				}
+			}
+		}
+
+		// Date range filters (exclusive)
+		if scheduledBeforeDate != nil {
+			if task.ScheduledDate == nil || !task.ScheduledDate.Before(*scheduledBeforeDate) {
+				continue
+			}
+		}
+		if scheduledAfterDate != nil {
+			if task.ScheduledDate == nil || !task.ScheduledDate.After(*scheduledAfterDate) {
+				continue
+			}
+		}
+		if deadlineBeforeDate != nil {
+			if task.DeadlineDate == nil || !task.DeadlineDate.Before(*deadlineBeforeDate) {
+				continue
+			}
+		}
+		if deadlineAfterDate != nil {
+			if task.DeadlineDate == nil || !task.DeadlineDate.After(*deadlineAfterDate) {
+				continue
+			}
+		}
+		// Creation date filters (exclusive) — CreationDate is non-nullable, no nil check needed
+		if createdBeforeDate != nil {
+			if !task.CreationDate.Before(*createdBeforeDate) {
+				continue
+			}
+		}
+		if createdAfterDate != nil {
+			if !task.CreationDate.After(*createdAfterDate) {
+				continue
+			}
+		}
+		// Name-based filters
+		if areaUUID != "" && !containsStr(task.AreaIDs, areaUUID) {
 			continue
 		}
-		if createdAfterDate != nil && !task.CreationDate.After(*createdAfterDate) {
+		if tagUUID != "" && !containsStr(task.TagIDs, tagUUID) {
 			continue
 		}
+		if containsText != "" && !strings.Contains(strings.ToLower(task.Title), containsText) && !strings.Contains(strings.ToLower(task.Note), containsText) {
+			continue
+		}
+
 		projects = append(projects, t.taskToOutput(task))
 	}
 	if projects == nil {
@@ -2837,14 +2942,23 @@ func defineTools(um *UserManager) []server.ServerTool {
 		},
 		{
 			Tool: mcp.NewTool("things_list_projects",
-				mcp.WithDescription("List projects in Things 3 with optional filters. Returns an array of project objects, each containing uuid, title, status, schedule, and optional fields: note, scheduledDate, deadlineDate, areas, tags. Default: only pending (active) projects. Use status parameter to query completed or canceled projects."),
+				mcp.WithDescription("List projects from Things 3 with optional filters. Returns an array of project objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, areas, tags. Default: only pending (active) projects. Use status parameter to query completed or canceled projects."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("status", mcp.Description("Filter by project status (default: pending — only active projects)"), mcp.Enum("pending", "completed", "canceled")),
+				mcp.WithString("schedule", mcp.Description("Filter by schedule"), mcp.Enum("inbox", "today", "anytime", "someday", "upcoming")),
+				mcp.WithString("scheduled_before", mcp.Description("Return projects scheduled before this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("scheduled_after", mcp.Description("Return projects scheduled after this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("deadline_before", mcp.Description("Return projects with deadline before this date (YYYY-MM-DD, exclusive)")),
+				mcp.WithString("deadline_after", mcp.Description("Return projects with deadline after this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("created_before", mcp.Description("Return projects created before this date/time (YYYY-MM-DD or RFC3339 e.g. 2025-03-01T00:00:00+08:00, exclusive)")),
 				mcp.WithString("created_after", mcp.Description("Return projects created after this date/time (YYYY-MM-DD or RFC3339 e.g. 2025-03-01T00:00:00+08:00, exclusive)")),
+				mcp.WithString("tag", mcp.Description("Filter by tag name (case-insensitive)")),
+				mcp.WithString("area", mcp.Description("Filter by area name (case-insensitive)")),
+				mcp.WithString("contains_text", mcp.Description("Filter projects whose title or note contains this text (case-insensitive)")),
+				mcp.WithBoolean("in_trash", mcp.Description("When true, include trashed items in results (default false)")),
+				mcp.WithString("status", mcp.Description("Filter by project status (default: pending — only active projects)"), mcp.Enum("pending", "completed", "canceled")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleListProjects(ctx, req)

@@ -126,10 +126,16 @@ func TestHandleListTasks(t *testing.T) {
 		assertNotError(t, result)
 
 		tasks := resultJSON[[]TaskOutput](t, result)
+		if len(tasks) == 0 {
+			t.Fatal("expected at least one task for schedule=today")
+		}
+		// schedule=today uses isScheduledForTodayOrPast, which includes overdue tasks
+		uuids := make(map[string]bool)
 		for _, task := range tasks {
-			if task.Schedule != "today" {
-				t.Errorf("expected schedule=today, got %q for %q", task.Schedule, task.Title)
-			}
+			uuids[task.UUID] = true
+		}
+		if !uuids["task-4"] {
+			t.Errorf("expected task-4 (today task) in results")
 		}
 	})
 
@@ -415,6 +421,260 @@ func TestHandleListProjects(t *testing.T) {
 		}
 		if projects[0].UUID != "proj-2" {
 			t.Errorf("expected proj-2, got %s", projects[0].UUID)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// handleListProjects — filter tests
+// ---------------------------------------------------------------------------
+
+func TestHandleListProjectsFilters(t *testing.T) {
+	area := makeAreaItem("area-1", "Work")
+	tag := makeTagItem("tag-1", "urgent")
+
+	projAnytime := makeTaskItem("proj-anytime",
+		withTitle("Anytime Project"),
+		withTaskType(thingscloud.TaskTypeProject),
+		withSchedule(thingscloud.TaskScheduleAnytime),
+		withScheduledDate(time.Now().Add(30*24*time.Hour)),
+		withDeadline(time.Now().Add(60*24*time.Hour)),
+		withArea("area-1"),
+		withTags("tag-1"),
+		withCreationDate(mustTime("2025-03-01")),
+	)
+	projSomeday := makeTaskItem("proj-someday",
+		withTitle("Someday Project"),
+		withTaskType(thingscloud.TaskTypeProject),
+		withSchedule(thingscloud.TaskScheduleSomeday),
+		withCreationDate(mustTime("2025-03-10")),
+		withNote("important notes here"),
+	)
+	projToday := makeTaskItem("proj-today",
+		withTitle("Today Project"),
+		withTaskType(thingscloud.TaskTypeProject),
+		withSchedule(thingscloud.TaskScheduleAnytime),
+		withScheduledDate(time.Now().Add(-1*time.Hour)),
+		withCreationDate(mustTime("2025-03-15")),
+	)
+	projTrashed := makeTaskItem("proj-trashed",
+		withTitle("Trashed Project"),
+		withTaskType(thingscloud.TaskTypeProject),
+		withTrashed(),
+		withCreationDate(mustTime("2025-01-01")),
+	)
+
+	fc := newFakeCloud("test@example.com", area, tag, projAnytime, projSomeday, projToday, projTrashed)
+	defer fc.Close()
+	tmcp := newTestThingsMCP(t, fc)
+
+	t.Run("schedule=someday", func(t *testing.T) {
+		req := makeReq(map[string]any{"schedule": "someday"})
+		result, _ := tmcp.handleListProjects(context.Background(), req)
+		assertNotError(t, result)
+
+		projects := resultJSON[[]TaskOutput](t, result)
+		if len(projects) != 1 {
+			t.Fatalf("expected 1 project, got %d", len(projects))
+		}
+		if projects[0].UUID != "proj-someday" {
+			t.Errorf("expected proj-someday, got %s", projects[0].UUID)
+		}
+	})
+
+	t.Run("schedule=today", func(t *testing.T) {
+		req := makeReq(map[string]any{"schedule": "today"})
+		result, _ := tmcp.handleListProjects(context.Background(), req)
+		assertNotError(t, result)
+
+		projects := resultJSON[[]TaskOutput](t, result)
+		if len(projects) != 1 {
+			t.Fatalf("expected 1 project, got %d", len(projects))
+		}
+		if projects[0].UUID != "proj-today" {
+			t.Errorf("expected proj-today, got %s", projects[0].UUID)
+		}
+	})
+
+	t.Run("scheduled_before filters by scheduled date", func(t *testing.T) {
+		// projAnytime is scheduled +30d, projToday is scheduled ~now
+		// Use +45d cutoff: both should match
+		cutoff := time.Now().Add(45 * 24 * time.Hour).Format("2006-01-02")
+		req := makeReq(map[string]any{"scheduled_before": cutoff})
+		result, _ := tmcp.handleListProjects(context.Background(), req)
+		assertNotError(t, result)
+
+		projects := resultJSON[[]TaskOutput](t, result)
+		uuids := make(map[string]bool)
+		for _, p := range projects {
+			uuids[p.UUID] = true
+		}
+		if !uuids["proj-anytime"] {
+			t.Errorf("expected proj-anytime in results")
+		}
+		if !uuids["proj-today"] {
+			t.Errorf("expected proj-today in results")
+		}
+	})
+
+	t.Run("deadline_before filters by deadline date", func(t *testing.T) {
+		// projAnytime has deadline +60d; use +90d cutoff
+		cutoff := time.Now().Add(90 * 24 * time.Hour).Format("2006-01-02")
+		req := makeReq(map[string]any{"deadline_before": cutoff})
+		result, _ := tmcp.handleListProjects(context.Background(), req)
+		assertNotError(t, result)
+
+		projects := resultJSON[[]TaskOutput](t, result)
+		if len(projects) != 1 {
+			t.Fatalf("expected 1 project, got %d", len(projects))
+		}
+		if projects[0].UUID != "proj-anytime" {
+			t.Errorf("expected proj-anytime, got %s", projects[0].UUID)
+		}
+	})
+
+	t.Run("deadline_after filters by deadline date", func(t *testing.T) {
+		// projAnytime has deadline +60d; use +30d cutoff so it's after
+		cutoff := time.Now().Add(30 * 24 * time.Hour).Format("2006-01-02")
+		req := makeReq(map[string]any{"deadline_after": cutoff})
+		result, _ := tmcp.handleListProjects(context.Background(), req)
+		assertNotError(t, result)
+
+		projects := resultJSON[[]TaskOutput](t, result)
+		if len(projects) != 1 {
+			t.Fatalf("expected 1 project, got %d", len(projects))
+		}
+		if projects[0].UUID != "proj-anytime" {
+			t.Errorf("expected proj-anytime, got %s", projects[0].UUID)
+		}
+	})
+
+	t.Run("tag=urgent", func(t *testing.T) {
+		req := makeReq(map[string]any{"tag": "urgent"})
+		result, _ := tmcp.handleListProjects(context.Background(), req)
+		assertNotError(t, result)
+
+		projects := resultJSON[[]TaskOutput](t, result)
+		if len(projects) != 1 {
+			t.Fatalf("expected 1 project, got %d", len(projects))
+		}
+		if projects[0].UUID != "proj-anytime" {
+			t.Errorf("expected proj-anytime, got %s", projects[0].UUID)
+		}
+	})
+
+	t.Run("area=Work", func(t *testing.T) {
+		req := makeReq(map[string]any{"area": "Work"})
+		result, _ := tmcp.handleListProjects(context.Background(), req)
+		assertNotError(t, result)
+
+		projects := resultJSON[[]TaskOutput](t, result)
+		if len(projects) != 1 {
+			t.Fatalf("expected 1 project, got %d", len(projects))
+		}
+		if projects[0].UUID != "proj-anytime" {
+			t.Errorf("expected proj-anytime, got %s", projects[0].UUID)
+		}
+	})
+
+	t.Run("contains_text matches note", func(t *testing.T) {
+		req := makeReq(map[string]any{"contains_text": "important"})
+		result, _ := tmcp.handleListProjects(context.Background(), req)
+		assertNotError(t, result)
+
+		projects := resultJSON[[]TaskOutput](t, result)
+		if len(projects) != 1 {
+			t.Fatalf("expected 1 project, got %d", len(projects))
+		}
+		if projects[0].UUID != "proj-someday" {
+			t.Errorf("expected proj-someday, got %s", projects[0].UUID)
+		}
+	})
+
+	t.Run("contains_text matches title", func(t *testing.T) {
+		req := makeReq(map[string]any{"contains_text": "anytime"})
+		result, _ := tmcp.handleListProjects(context.Background(), req)
+		assertNotError(t, result)
+
+		projects := resultJSON[[]TaskOutput](t, result)
+		if len(projects) != 1 {
+			t.Fatalf("expected 1 project, got %d", len(projects))
+		}
+		if projects[0].UUID != "proj-anytime" {
+			t.Errorf("expected proj-anytime, got %s", projects[0].UUID)
+		}
+	})
+
+	t.Run("in_trash=true includes trashed projects", func(t *testing.T) {
+		req := makeReq(map[string]any{"in_trash": true})
+		result, _ := tmcp.handleListProjects(context.Background(), req)
+		assertNotError(t, result)
+
+		projects := resultJSON[[]TaskOutput](t, result)
+		// All 4 pending projects (3 non-trashed + 1 trashed), default status=pending
+		if len(projects) != 4 {
+			t.Fatalf("expected 4 projects, got %d", len(projects))
+		}
+		uuids := make(map[string]bool)
+		for _, p := range projects {
+			uuids[p.UUID] = true
+		}
+		if !uuids["proj-trashed"] {
+			t.Errorf("expected proj-trashed in results")
+		}
+	})
+
+	t.Run("scheduled_after filters by scheduled date", func(t *testing.T) {
+		// projAnytime is +30d, projToday is ~now; use +15d cutoff
+		cutoff := time.Now().Add(15 * 24 * time.Hour).Format("2006-01-02")
+		req := makeReq(map[string]any{"scheduled_after": cutoff})
+		result, _ := tmcp.handleListProjects(context.Background(), req)
+		assertNotError(t, result)
+
+		projects := resultJSON[[]TaskOutput](t, result)
+		// Only projAnytime (+30d) is after cutoff (+15d); projToday (~now) is not
+		if len(projects) != 1 {
+			t.Fatalf("expected 1 project, got %d", len(projects))
+		}
+		if projects[0].UUID != "proj-anytime" {
+			t.Errorf("expected proj-anytime, got %s", projects[0].UUID)
+		}
+	})
+
+	t.Run("created_before=2025-03-05", func(t *testing.T) {
+		req := makeReq(map[string]any{"created_before": "2025-03-05"})
+		result, _ := tmcp.handleListProjects(context.Background(), req)
+		assertNotError(t, result)
+
+		projects := resultJSON[[]TaskOutput](t, result)
+		// projAnytime (2025-03-01) matches; projTrashed (2025-01-01) excluded by default in_trash=false
+		if len(projects) != 1 {
+			t.Fatalf("expected 1 project, got %d", len(projects))
+		}
+		if projects[0].UUID != "proj-anytime" {
+			t.Errorf("expected proj-anytime, got %s", projects[0].UUID)
+		}
+	})
+
+	t.Run("created_after=2025-03-05", func(t *testing.T) {
+		req := makeReq(map[string]any{"created_after": "2025-03-05"})
+		result, _ := tmcp.handleListProjects(context.Background(), req)
+		assertNotError(t, result)
+
+		projects := resultJSON[[]TaskOutput](t, result)
+		// projSomeday (2025-03-10) and projToday (2025-03-15) match
+		if len(projects) != 2 {
+			t.Fatalf("expected 2 projects, got %d", len(projects))
+		}
+		uuids := make(map[string]bool)
+		for _, p := range projects {
+			uuids[p.UUID] = true
+		}
+		if !uuids["proj-someday"] {
+			t.Errorf("expected proj-someday in results")
+		}
+		if !uuids["proj-today"] {
+			t.Errorf("expected proj-today in results")
 		}
 	})
 }
