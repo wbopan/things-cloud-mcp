@@ -1,0 +1,551 @@
+package memory
+
+import (
+	"encoding/json"
+	// "fmt"
+	"sort"
+
+	things "github.com/arthursoares/things-cloud-sdk"
+)
+
+// State is created by applying all history items in order.
+// Note that the hierarchy within the state (e.g. area > tasks > tasks > check list items)
+// is modelled with pointers between the different maps, so concurrent modification
+// is not safe.
+type State struct {
+	Areas          map[string]*things.Area
+	Tasks          map[string]*things.Task
+	Tags           map[string]*things.Tag
+	CheckListItems map[string]*things.CheckListItem
+}
+
+// NewState creates a new, empty state
+func NewState() *State {
+	return &State{
+		Areas:          map[string]*things.Area{},
+		Tags:           map[string]*things.Tag{},
+		CheckListItems: map[string]*things.CheckListItem{},
+		Tasks:          map[string]*things.Task{},
+	}
+}
+
+func (s *State) updateTask(item things.TaskActionItem, rawP json.RawMessage) *things.Task {
+	t, ok := s.Tasks[item.UUID()]
+	if !ok {
+		t = &things.Task{
+			Schedule: things.TaskScheduleAnytime,
+		}
+	}
+	t.UUID = item.UUID()
+
+	if item.P.Title != nil {
+		t.Title = *item.P.Title
+	}
+	if item.P.Type != nil {
+		t.Type = *item.P.Type
+	}
+	if item.P.Status != nil {
+		t.Status = *item.P.Status
+	}
+	if item.P.Index != nil {
+		t.Index = *item.P.Index
+	}
+	if item.P.InTrash != nil {
+		t.InTrash = *item.P.InTrash
+	}
+	if item.P.Schedule != nil {
+		t.Schedule = *item.P.Schedule
+	}
+	if item.P.ScheduledDate != nil {
+		t.ScheduledDate = item.P.ScheduledDate.Time()
+	}
+	if item.P.CompletionDate != nil {
+		t.CompletionDate = item.P.CompletionDate.Time()
+	}
+	if item.P.DeadlineDate != nil {
+		t.DeadlineDate = item.P.DeadlineDate.Time()
+	}
+	if item.P.CreationDate != nil {
+		cd := item.P.CreationDate.Time()
+		t.CreationDate = *cd
+	}
+	if item.P.ModificationDate != nil {
+		t.ModificationDate = item.P.ModificationDate.Time()
+	}
+	if item.P.AreaIDs != nil {
+		ids := *item.P.AreaIDs
+		t.AreaIDs = ids
+	}
+	if item.P.ActionGroupIDs != nil {
+		ids := *item.P.ActionGroupIDs
+		t.ActionGroupIDs = ids
+	}
+	if item.P.ParentTaskIDs != nil {
+		ids := *item.P.ParentTaskIDs
+		t.ParentTaskIDs = ids
+	}
+	if item.P.Note != nil {
+		var noteStr string
+		if err := json.Unmarshal(item.P.Note, &noteStr); err == nil {
+			t.Note = noteStr
+		} else {
+			var note things.Note
+			if err := json.Unmarshal(item.P.Note, &note); err == nil {
+				switch note.Type {
+				case things.NoteTypeFullText:
+					t.Note = note.Value
+				case things.NoteTypeDelta:
+					t.Note = things.ApplyPatches(t.Note, note.Patches)
+				}
+			}
+		}
+	}
+	if item.P.AlarmTimeOffset != nil {
+		t.AlarmTimeOffset = item.P.AlarmTimeOffset
+	}
+	if item.P.TagIDs != nil {
+		t.TagIDs = item.P.TagIDs
+	}
+	if item.P.DueOrder != nil {
+		t.DueOrder = *item.P.DueOrder
+	}
+	if item.P.TaskIndex != nil {
+		t.TodayIndex = *item.P.TaskIndex
+	}
+	if item.P.DelegateIDs != nil {
+		t.DelegateIDs = *item.P.DelegateIDs
+	}
+	if item.P.RecurrenceTaskIDs != nil {
+		t.RecurrenceIDs = *item.P.RecurrenceTaskIDs
+	}
+	if item.P.TaskIR != nil {
+		t.TodayIndexRefDate = item.P.TaskIR.Time()
+	}
+
+	// Handle explicit null clears: parse raw JSON to find keys set to null.
+	// Go's JSON decoder sets *Timestamp to nil for both "absent" and "null",
+	// so we need raw JSON to distinguish "clear this field" from "not changed".
+	var rawFields map[string]json.RawMessage
+	if err := json.Unmarshal(rawP, &rawFields); err == nil {
+		for key, val := range rawFields {
+			if string(val) == "null" {
+				switch key {
+				case "sr":
+					t.ScheduledDate = nil
+				case "dd":
+					t.DeadlineDate = nil
+				case "sp":
+					t.CompletionDate = nil
+				case "md":
+					t.ModificationDate = nil
+				case "ato":
+					t.AlarmTimeOffset = nil
+				case "tir":
+					t.TodayIndexRefDate = nil
+				case "nt":
+					t.Note = ""
+				case "tg":
+					t.TagIDs = nil
+				}
+			}
+		}
+	}
+
+	return t
+}
+
+func (s *State) updateCheckListItem(item things.CheckListActionItem, rawP json.RawMessage) *things.CheckListItem {
+	c, ok := s.CheckListItems[item.UUID()]
+	if !ok {
+		c = &things.CheckListItem{}
+	}
+	c.UUID = item.UUID()
+
+	if item.P.CreationDate != nil {
+		t := item.P.CreationDate.Time()
+		c.CreationDate = *t
+	}
+	if item.P.ModificationDate != nil {
+		c.ModificationDate = item.P.ModificationDate.Time()
+	}
+	if item.P.Index != nil {
+		c.Index = *item.P.Index
+	}
+	if item.P.Title != nil {
+		c.Title = *item.P.Title
+	}
+	if item.P.Status != nil {
+		c.Status = *item.P.Status
+	}
+	if item.P.TaskIDs != nil {
+		ids := *item.P.TaskIDs
+		c.TaskIDs = ids
+	}
+	if item.P.CompletionDate != nil {
+		c.CompletionDate = item.P.CompletionDate.Time()
+	}
+
+	var rawFields map[string]json.RawMessage
+	if err := json.Unmarshal(rawP, &rawFields); err == nil {
+		for key, val := range rawFields {
+			if string(val) == "null" {
+				switch key {
+				case "md":
+					c.ModificationDate = nil
+				case "sp":
+					c.CompletionDate = nil
+				}
+			}
+		}
+	}
+
+	return c
+}
+
+func (s *State) updateArea(item things.AreaActionItem) *things.Area {
+	a, ok := s.Areas[item.UUID()]
+	if !ok {
+		a = &things.Area{}
+	}
+	a.UUID = item.UUID()
+
+	if item.P.Title != nil {
+		a.Title = *item.P.Title
+	}
+
+	return a
+}
+
+func (s *State) updateTag(item things.TagActionItem) *things.Tag {
+	t, ok := s.Tags[item.UUID()]
+	if !ok {
+		t = &things.Tag{}
+	}
+	t.UUID = item.UUID()
+
+	if item.P.Title != nil {
+		t.Title = *item.P.Title
+	}
+	if item.P.ShortHand != nil {
+		t.ShortHand = *item.P.ShortHand
+	}
+	if item.P.ParentTagIDs != nil {
+		var ids = *item.P.ParentTagIDs
+		t.ParentTagIDs = ids
+	}
+
+	return t
+}
+
+// Update applies all items to update the aggregated state
+func (s *State) Update(items ...things.Item) error {
+	for _, rawItem := range items {
+		switch rawItem.Kind {
+		case things.ItemKindTask, things.ItemKindTask4, things.ItemKindTask3, things.ItemKindTaskPlain:
+			item := things.TaskActionItem{Item: rawItem}
+			if err := json.Unmarshal(rawItem.P, &item.P); err != nil {
+				continue // Skip items that can't be parsed
+			}
+
+			switch item.Action {
+			case things.ItemActionCreated:
+				fallthrough
+			case things.ItemActionModified:
+				s.Tasks[item.UUID()] = s.updateTask(item, rawItem.P)
+			case things.ItemActionDeleted:
+				delete(s.Tasks, item.UUID())
+			default:
+				// Unsupported action: skip
+			}
+
+		case things.ItemKindChecklistItem, things.ItemKindChecklistItem2, things.ItemKindChecklistItem3:
+			item := things.CheckListActionItem{Item: rawItem}
+			if err := json.Unmarshal(rawItem.P, &item.P); err != nil {
+				continue // Skip unparseable items
+			}
+
+			switch item.Action {
+			case things.ItemActionCreated:
+				fallthrough
+			case things.ItemActionModified:
+				s.CheckListItems[item.UUID()] = s.updateCheckListItem(item, rawItem.P)
+			case things.ItemActionDeleted:
+				delete(s.CheckListItems, item.UUID())
+			default:
+				// Unsupported action: skip
+			}
+
+		case things.ItemKindArea, things.ItemKindArea3, things.ItemKindAreaPlain:
+			item := things.AreaActionItem{Item: rawItem}
+			if err := json.Unmarshal(rawItem.P, &item.P); err != nil {
+				continue // Skip unparseable items
+			}
+
+			switch item.Action {
+			case things.ItemActionCreated:
+				fallthrough
+			case things.ItemActionModified:
+				s.Areas[item.UUID()] = s.updateArea(item)
+
+			case things.ItemActionDeleted:
+				delete(s.Areas, item.UUID())
+			default:
+				// Unsupported action: skip
+			}
+
+		case things.ItemKindTag, things.ItemKindTag4, things.ItemKindTagPlain:
+			item := things.TagActionItem{Item: rawItem}
+			if err := json.Unmarshal(rawItem.P, &item.P); err != nil {
+				continue // Skip unparseable items
+			}
+
+			switch item.Action {
+			case things.ItemActionCreated:
+				fallthrough
+			case things.ItemActionModified:
+				s.Tags[item.UUID()] = s.updateTag(item)
+			case things.ItemActionDeleted:
+				delete(s.Tags, item.UUID())
+			default:
+				// Unsupported action: skip
+			}
+
+		case things.ItemKindTombstone:
+			item := things.TombstoneActionItem{Item: rawItem}
+			if err := json.Unmarshal(rawItem.P, &item.P); err != nil {
+				continue
+			}
+			oid := item.P.DeletedObjectID
+			delete(s.Tasks, oid)
+			delete(s.Areas, oid)
+			delete(s.Tags, oid)
+			delete(s.CheckListItems, oid)
+
+		default:
+			// Unsupported kind: skip
+		}
+	}
+	return nil
+}
+
+// Projects returns all projects for this history
+func (s *State) Projects() []*things.Task {
+	tasks := []*things.Task{}
+	for _, task := range s.Tasks {
+		if task.Type != things.TaskTypeProject {
+			continue
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks
+}
+
+// Subtasks returns tasks grouped together with under a root task
+func (s *State) Subtasks(root *things.Task, opts ListOption) []*things.Task {
+	tasks := []*things.Task{}
+	for _, task := range s.Tasks {
+		if task.Status == things.TaskStatusCompleted && opts.ExcludeCompleted {
+			continue
+		}
+		if task == root {
+			continue
+		}
+		if task.InTrash && opts.ExcludeInTrash {
+			continue
+		}
+		isChild := false
+		for _, taskID := range task.ParentTaskIDs {
+			isChild = isChild || taskID == root.UUID
+		}
+		if isChild {
+			tasks = append(tasks, task)
+		}
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].Index < tasks[j].Index
+	})
+	return tasks
+}
+
+func hasArea(task *things.Task, state *State) bool {
+	if task == nil {
+		return false
+	}
+	if len(task.AreaIDs) != 0 {
+		return true
+	}
+	if len(task.ParentTaskIDs) == 0 {
+		return false
+	}
+	for _, taskID := range task.ParentTaskIDs {
+		if hasArea(state.Tasks[taskID], state) {
+			return true
+		}
+	}
+	return false
+}
+
+// TasksWithoutArea looks up top level tasks not assigned to any area, e.g. just created and placed in today
+func (s *State) TasksWithoutArea() []*things.Task {
+	tasks := []*things.Task{}
+	for _, task := range s.Tasks {
+		if task.Status == things.TaskStatusCompleted {
+			continue
+		}
+		if len(task.ParentTaskIDs) != 0 {
+			continue
+		}
+		if task.InTrash {
+			continue
+		}
+		if !hasArea(task, s) {
+			tasks = append(tasks, task)
+		}
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].Index < tasks[j].Index
+	})
+	return tasks
+}
+
+// AreaByName returns an Area if the name matches
+func (s *State) AreaByName(name string) *things.Area {
+	for _, area := range s.Areas {
+		if area.Title == name {
+			return area
+		}
+	}
+	return nil
+}
+
+// ProjectByName returns an project if the name matches
+func (s *State) ProjectByName(name string) *things.Task {
+	for _, task := range s.Tasks {
+		if task.Type != things.TaskTypeProject {
+			continue
+		}
+		if task.Title == name {
+			return task
+		}
+	}
+	return nil
+}
+
+// ListOption allows the result set to be filtered
+type ListOption struct {
+	ExcludeCompleted bool
+	ExcludeInTrash   bool
+}
+
+// TasksByArea returns tasks associated with a given area
+func (s *State) TasksByArea(area *things.Area, opts ListOption) []*things.Task {
+	tasks := []*things.Task{}
+	for _, task := range s.Tasks {
+		if task.Status == things.TaskStatusCompleted && opts.ExcludeCompleted {
+			continue
+		}
+		if task.InTrash && opts.ExcludeInTrash {
+			continue
+		}
+		isChild := false
+		for _, areaID := range task.AreaIDs {
+			isChild = isChild || areaID == area.UUID
+		}
+		if isChild {
+			tasks = append(tasks, task)
+		}
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].Index < tasks[j].Index
+	})
+	return tasks
+}
+
+// CheckListItemsByTask returns check lists associated with a particular item
+func (s *State) CheckListItemsByTask(task *things.Task, opts ListOption) []*things.CheckListItem {
+	items := []*things.CheckListItem{}
+	for _, item := range s.CheckListItems {
+		if item.Status == things.TaskStatusCompleted && opts.ExcludeCompleted {
+			continue
+		}
+		isChild := false
+		for _, taskID := range item.TaskIDs {
+			isChild = isChild || task.UUID == taskID
+		}
+		if isChild {
+			items = append(items, item)
+		}
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Index < items[j].Index
+	})
+	return items
+}
+
+// Headings returns all headings within a project
+func (s *State) Headings(projectID string) []*things.Task {
+	tasks := []*things.Task{}
+	for _, task := range s.Tasks {
+		if task.Type != things.TaskTypeHeading {
+			continue
+		}
+		for _, pid := range task.ParentTaskIDs {
+			if pid == projectID {
+				tasks = append(tasks, task)
+				break
+			}
+		}
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].Index < tasks[j].Index
+	})
+	return tasks
+}
+
+// TasksByHeading returns tasks assigned to a specific heading (action group)
+func (s *State) TasksByHeading(headingID string, opts ListOption) []*things.Task {
+	tasks := []*things.Task{}
+	for _, task := range s.Tasks {
+		if task.Type != things.TaskTypeTask {
+			continue
+		}
+		if task.Status == things.TaskStatusCompleted && opts.ExcludeCompleted {
+			continue
+		}
+		if task.InTrash && opts.ExcludeInTrash {
+			continue
+		}
+		for _, agr := range task.ActionGroupIDs {
+			if agr == headingID {
+				tasks = append(tasks, task)
+				break
+			}
+		}
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].Index < tasks[j].Index
+	})
+	return tasks
+}
+
+// SubTags returns all child tags for a given root, ensuring sort order is kept intact
+func (s *State) SubTags(root *things.Tag) []*things.Tag {
+	children := []*things.Tag{}
+	for _, tag := range s.Tags {
+		if tag == root {
+			continue
+		}
+
+		isChild := false
+		for _, parentID := range tag.ParentTagIDs {
+			isChild = isChild || parentID == root.UUID
+		}
+		if isChild {
+			children = append(children, tag)
+		}
+	}
+	sort.Slice(children, func(i, j int) bool {
+		return children[i].ShortHand < children[j].ShortHand
+	})
+	return children
+}

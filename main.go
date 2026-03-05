@@ -539,7 +539,7 @@ func scheduleString(st thingscloud.TaskSchedule, scheduledDate *time.Time) strin
 	case 0:
 		return "inbox"
 	case 1:
-		if scheduledDate != nil && !scheduledDate.After(time.Now()) {
+		if scheduledDate != nil && isToday(*scheduledDate) {
 			return "today"
 		}
 		return "anytime"
@@ -551,6 +551,26 @@ func scheduleString(st thingscloud.TaskSchedule, scheduledDate *time.Time) strin
 	default:
 		return "inbox"
 	}
+}
+
+// isToday returns true if t falls on today's date (UTC).
+func isToday(t time.Time) bool {
+	now := time.Now().UTC()
+	return t.Year() == now.Year() && t.Month() == now.Month() && t.Day() == now.Day()
+}
+
+// isScheduledForTodayOrPast returns true if the task should appear in
+// the Today filter: either scheduled for today or overdue (past date).
+func isScheduledForTodayOrPast(st thingscloud.TaskSchedule, scheduledDate *time.Time) bool {
+	if scheduledDate == nil {
+		return false
+	}
+	if st != 1 && st != 2 {
+		return false
+	}
+	now := time.Now().UTC()
+	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
+	return !scheduledDate.After(todayEnd)
 }
 
 func (t *ThingsMCP) taskToOutput(task *thingscloud.Task) TaskOutput {
@@ -1961,9 +1981,15 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 
 		// Schedule filter
 		if schedule != "" {
-			taskSchedule := scheduleString(task.Schedule, task.ScheduledDate)
-			if taskSchedule != schedule {
-				continue
+			if schedule == "today" {
+				if !isScheduledForTodayOrPast(task.Schedule, task.ScheduledDate) {
+					continue
+				}
+			} else {
+				taskSchedule := scheduleString(task.Schedule, task.ScheduledDate)
+				if taskSchedule != schedule {
+					continue
+				}
 			}
 		}
 
