@@ -498,7 +498,7 @@ var LandingPageHTML = `<!DOCTYPE html>
       <span class="hero-feature-sep">/</span>
       <span class="hero-feature">OAuth 2.0</span>
       <span class="hero-feature-sep">/</span>
-      <span class="hero-feature">19 Tools</span>
+      <span class="hero-feature">21 Tools</span>
     </div>
   </div>
 </section>
@@ -821,7 +821,7 @@ var DocsPageHTML = `<!DOCTYPE html>
 <!-- Docs Hero -->
 <div class="docs-hero">
   <h2>Documentation</h2>
-  <p>Complete reference for all 19 tools available through the Things Cloud MCP server.</p>
+  <p>Complete reference for all 21 tools available through the Things Cloud MCP server.</p>
 </div>
 
 <!-- Read Tools -->
@@ -829,7 +829,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   <div class="category-header">
     <span class="category-dot read"></span>
     <h3>Read</h3>
-    <span class="count">7 tools</span>
+    <span class="count">8 tools</span>
   </div>
 
   <div class="tool-entry">
@@ -910,6 +910,12 @@ var DocsPageHTML = `<!DOCTYPE html>
   <div class="tool-entry">
     <div class="tool-entry-name">things_list_tags</div>
     <div class="tool-entry-desc">List all tags</div>
+    <div class="no-params">No parameters</div>
+  </div>
+
+  <div class="tool-entry">
+    <div class="tool-entry-name">things_diagnose</div>
+    <div class="tool-entry-desc">Run full diagnostic of the Things Cloud sync pipeline</div>
     <div class="no-params">No parameters</div>
   </div>
 </div>
@@ -993,7 +999,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   <div class="category-header">
     <span class="category-dot modify"></span>
     <h3>Modify</h3>
-    <span class="count">7 tools</span>
+    <span class="count">5 tools</span>
   </div>
 
   <div class="tool-entry">
@@ -1038,24 +1044,6 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">things_trash_item</div>
-    <div class="tool-entry-desc">Move an item to trash</div>
-    <table class="params-table">
-      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
-      <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Item UUID</td></tr>
-    </table>
-  </div>
-
-  <div class="tool-entry">
-    <div class="tool-entry-name">things_restore_item</div>
-    <div class="tool-entry-desc">Restore an item from trash</div>
-    <table class="params-table">
-      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
-      <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Item UUID</td></tr>
-    </table>
-  </div>
-
-  <div class="tool-entry">
     <div class="tool-entry-name">things_delete_area</div>
     <div class="tool-entry-desc">Permanently delete an area</div>
     <table class="params-table">
@@ -1079,7 +1067,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   <div class="category-header">
     <span class="category-dot modify"></span>
     <h3>Checklist</h3>
-    <span class="count">4 tools</span>
+    <span class="count">3 tools</span>
   </div>
 
   <div class="tool-entry">
@@ -1101,16 +1089,7 @@ var DocsPageHTML = `<!DOCTYPE html>
       <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Checklist item UUID</td></tr>
       <tr><td><span class="param-name">title</span></td><td class="param-type">string</td><td>New title</td></tr>
       <tr><td><span class="param-name">index</span></td><td class="param-type">number</td><td>New sort position</td></tr>
-    </table>
-  </div>
-
-  <div class="tool-entry">
-    <div class="tool-entry-name">things_complete_checklist_item</div>
-    <div class="tool-entry-desc">Complete or uncomplete a checklist item</div>
-    <table class="params-table">
-      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
-      <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Checklist item UUID</td></tr>
-      <tr><td><span class="param-name">uncomplete</span></td><td class="param-type">bool</td><td>Set true to mark as pending instead (default false)</td></tr>
+      <tr><td><span class="param-name">completed</span></td><td class="param-type">bool</td><td>Set true to complete, false to mark pending</td></tr>
     </table>
   </div>
 
