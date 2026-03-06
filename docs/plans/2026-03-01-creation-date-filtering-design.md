@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add `created_after` and `created_before` date filters to `things_list_tasks` and `things_list_projects` tools so users can fetch recently-created items.
+**Goal:** Add `created_after` and `created_before` date filters to `things_find_tasks` and `things_find_projects` tools so users can fetch recently-created items.
 
 **Architecture:** Client-side filtering on the already-populated `task.CreationDate` field (`time.Time`, non-nullable). Follows the exact same pattern as existing `scheduled_before/after` and `deadline_before/after` filters — parse `YYYY-MM-DD` string with `parseDate()`, compare with `.Before()`/`.After()`.
 
@@ -12,7 +12,7 @@
 
 ---
 
-### Task 1: Add created_after/created_before to things_list_tasks handler
+### Task 1: Add created_after/created_before to things_find_tasks handler
 
 **Files:**
 - Modify: `main.go:979-983` (parameter extraction)
@@ -75,30 +75,30 @@ Expected: clean build, no errors
 
 ```bash
 git add main.go
-git commit -m "Add created_after/created_before filtering to things_list_tasks"
+git commit -m "Add created_after/created_before filtering to things_find_tasks"
 ```
 
 ---
 
-### Task 2: Add created_after/created_before to things_list_projects handler
+### Task 2: Add created_after/created_before to things_find_projects handler
 
 **Files:**
-- Modify: `main.go:1217-1232` (handleListProjects)
+- Modify: `main.go:1217-1232` (handleFindProjects)
 
-The current `handleListProjects` handler accepts no parameters (`_ mcp.CallToolRequest`). It needs to be updated to extract, parse, and filter on the new params.
+The current `handleFindProjects` handler accepts no parameters (`_ mcp.CallToolRequest`). It needs to be updated to extract, parse, and filter on the new params.
 
 **Step 1: Update function signature**
 
 At `main.go:1217`, change:
 
 ```go
-func (t *ThingsMCP) handleListProjects(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (t *ThingsMCP) handleFindProjects(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 ```
 
 to:
 
 ```go
-func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (t *ThingsMCP) handleFindProjects(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 ```
 
 **Step 2: Add parameter extraction, parsing, and filtering**
@@ -147,7 +147,7 @@ Expected: clean build, no errors
 
 ```bash
 git add main.go
-git commit -m "Add created_after/created_before filtering to things_list_projects"
+git commit -m "Add created_after/created_before filtering to things_find_projects"
 ```
 
 ---
@@ -155,10 +155,10 @@ git commit -m "Add created_after/created_before filtering to things_list_project
 ### Task 3: Add tool parameter declarations for both tools
 
 **Files:**
-- Modify: `main.go:1783-1799` (things_list_tasks tool definition)
-- Modify: `main.go:1831-1837` (things_list_projects tool definition)
+- Modify: `main.go:1783-1799` (things_find_tasks tool definition)
+- Modify: `main.go:1831-1837` (things_find_projects tool definition)
 
-**Step 1: Add parameter declarations to things_list_tasks**
+**Step 1: Add parameter declarations to things_find_tasks**
 
 At `main.go:1793` (after the `deadline_after` parameter), add:
 
@@ -167,12 +167,12 @@ At `main.go:1793` (after the `deadline_after` parameter), add:
 			mcp.WithString("created_after", mcp.Description("Return tasks created after this date (YYYY-MM-DD, exclusive)")),
 ```
 
-**Step 2: Add parameter declarations to things_list_projects**
+**Step 2: Add parameter declarations to things_find_projects**
 
-At the `things_list_projects` tool definition (line 1831), add parameters. Change from no params:
+At the `things_find_projects` tool definition (line 1831), add parameters. Change from no params:
 
 ```go
-		Tool: mcp.NewTool("things_list_projects",
+		Tool: mcp.NewTool("things_find_projects",
 			mcp.WithDescription("List all active (non-trashed, non-completed) projects in Things 3. Returns an array of project objects, each containing uuid, title, status, schedule, and optional fields: note, scheduledDate, deadlineDate, areas, tags."),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),
@@ -184,7 +184,7 @@ At the `things_list_projects` tool definition (line 1831), add parameters. Chang
 to:
 
 ```go
-		Tool: mcp.NewTool("things_list_projects",
+		Tool: mcp.NewTool("things_find_projects",
 			mcp.WithDescription("List active (non-trashed, non-completed) projects in Things 3 with optional filters. Returns an array of project objects, each containing uuid, title, status, schedule, and optional fields: note, scheduledDate, deadlineDate, areas, tags."),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),

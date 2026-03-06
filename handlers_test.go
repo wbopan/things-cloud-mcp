@@ -10,7 +10,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// handleListTasks
+// handleFindTasks
 // ---------------------------------------------------------------------------
 
 func TestHandleListTasks(t *testing.T) {
@@ -96,7 +96,7 @@ func TestHandleListTasks(t *testing.T) {
 
 	t.Run("default returns only pending tasks", func(t *testing.T) {
 		req := makeReq(map[string]any{})
-		result, err := tmcp.handleListTasks(context.Background(), req)
+		result, err := tmcp.handleFindTasks(context.Background(), req)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -122,7 +122,7 @@ func TestHandleListTasks(t *testing.T) {
 
 	t.Run("schedule=today filter", func(t *testing.T) {
 		req := makeReq(map[string]any{"schedule": "today"})
-		result, _ := tmcp.handleListTasks(context.Background(), req)
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		assertNotError(t, result)
 
 		tasks := resultJSON[[]TaskOutput](t, result)
@@ -141,7 +141,7 @@ func TestHandleListTasks(t *testing.T) {
 
 	t.Run("status=completed filter", func(t *testing.T) {
 		req := makeReq(map[string]any{"status": "completed"})
-		result, _ := tmcp.handleListTasks(context.Background(), req)
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		assertNotError(t, result)
 
 		tasks := resultJSON[[]TaskOutput](t, result)
@@ -163,7 +163,7 @@ func TestHandleListTasks(t *testing.T) {
 
 	t.Run("tag filter", func(t *testing.T) {
 		req := makeReq(map[string]any{"tag": "important"})
-		result, _ := tmcp.handleListTasks(context.Background(), req)
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		assertNotError(t, result)
 
 		tasks := resultJSON[[]TaskOutput](t, result)
@@ -179,7 +179,7 @@ func TestHandleListTasks(t *testing.T) {
 
 	t.Run("area filter", func(t *testing.T) {
 		req := makeReq(map[string]any{"area": "Work"})
-		result, _ := tmcp.handleListTasks(context.Background(), req)
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		assertNotError(t, result)
 
 		tasks := resultJSON[[]TaskOutput](t, result)
@@ -195,7 +195,7 @@ func TestHandleListTasks(t *testing.T) {
 
 	t.Run("project filter", func(t *testing.T) {
 		req := makeReq(map[string]any{"project": "My Project"})
-		result, _ := tmcp.handleListTasks(context.Background(), req)
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		assertNotError(t, result)
 
 		tasks := resultJSON[[]TaskOutput](t, result)
@@ -211,7 +211,7 @@ func TestHandleListTasks(t *testing.T) {
 
 	t.Run("contains_text in title", func(t *testing.T) {
 		req := makeReq(map[string]any{"contains_text": "groceries"})
-		result, _ := tmcp.handleListTasks(context.Background(), req)
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		assertNotError(t, result)
 
 		tasks := resultJSON[[]TaskOutput](t, result)
@@ -225,7 +225,7 @@ func TestHandleListTasks(t *testing.T) {
 
 	t.Run("contains_text in note", func(t *testing.T) {
 		req := makeReq(map[string]any{"contains_text": "important details"})
-		result, _ := tmcp.handleListTasks(context.Background(), req)
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		assertNotError(t, result)
 
 		tasks := resultJSON[[]TaskOutput](t, result)
@@ -239,7 +239,7 @@ func TestHandleListTasks(t *testing.T) {
 
 	t.Run("in_trash=true includes trashed", func(t *testing.T) {
 		req := makeReq(map[string]any{"in_trash": true})
-		result, _ := tmcp.handleListTasks(context.Background(), req)
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		assertNotError(t, result)
 
 		tasks := resultJSON[[]TaskOutput](t, result)
@@ -260,7 +260,7 @@ func TestHandleListTasks(t *testing.T) {
 			"scheduled_before": "2025-07-01",
 			"scheduled_after":  "2025-05-01",
 		})
-		result, _ := tmcp.handleListTasks(context.Background(), req)
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		assertNotError(t, result)
 
 		tasks := resultJSON[[]TaskOutput](t, result)
@@ -281,7 +281,7 @@ func TestHandleListTasks(t *testing.T) {
 			"created_before": "2025-03-11",
 			"created_after":  "2025-03-09",
 		})
-		result, _ := tmcp.handleListTasks(context.Background(), req)
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		assertNotError(t, result)
 
 		tasks := resultJSON[[]TaskOutput](t, result)
@@ -298,14 +298,14 @@ func TestHandleListTasks(t *testing.T) {
 
 	t.Run("empty result returns empty array", func(t *testing.T) {
 		req := makeReq(map[string]any{"tag": "nonexistent"})
-		result, _ := tmcp.handleListTasks(context.Background(), req)
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		// This should be an error since tag is not found
 		assertIsError(t, result)
 	})
 
 	t.Run("nonexistent area returns error", func(t *testing.T) {
 		req := makeReq(map[string]any{"area": "Nonexistent"})
-		result, _ := tmcp.handleListTasks(context.Background(), req)
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		assertIsError(t, result)
 	})
 }
@@ -372,7 +372,7 @@ func TestHandleShowTask(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// handleListProjects
+// handleFindProjects
 // ---------------------------------------------------------------------------
 
 func TestHandleListProjects(t *testing.T) {
@@ -398,7 +398,7 @@ func TestHandleListProjects(t *testing.T) {
 
 	t.Run("default returns only pending projects", func(t *testing.T) {
 		req := makeReq(map[string]any{})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -412,7 +412,7 @@ func TestHandleListProjects(t *testing.T) {
 
 	t.Run("status=completed returns completed projects", func(t *testing.T) {
 		req := makeReq(map[string]any{"status": "completed"})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -426,7 +426,7 @@ func TestHandleListProjects(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// handleListProjects — filter tests
+// handleFindProjects — filter tests
 // ---------------------------------------------------------------------------
 
 func TestHandleListProjectsFilters(t *testing.T) {
@@ -470,7 +470,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 
 	t.Run("schedule=someday", func(t *testing.T) {
 		req := makeReq(map[string]any{"schedule": "someday"})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -484,7 +484,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 
 	t.Run("schedule=today", func(t *testing.T) {
 		req := makeReq(map[string]any{"schedule": "today"})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -501,7 +501,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 		// Use +45d cutoff: both should match
 		cutoff := time.Now().Add(45 * 24 * time.Hour).Format("2006-01-02")
 		req := makeReq(map[string]any{"scheduled_before": cutoff})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -521,7 +521,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 		// projAnytime has deadline +60d; use +90d cutoff
 		cutoff := time.Now().Add(90 * 24 * time.Hour).Format("2006-01-02")
 		req := makeReq(map[string]any{"deadline_before": cutoff})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -537,7 +537,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 		// projAnytime has deadline +60d; use +30d cutoff so it's after
 		cutoff := time.Now().Add(30 * 24 * time.Hour).Format("2006-01-02")
 		req := makeReq(map[string]any{"deadline_after": cutoff})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -551,7 +551,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 
 	t.Run("tag=urgent", func(t *testing.T) {
 		req := makeReq(map[string]any{"tag": "urgent"})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -565,7 +565,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 
 	t.Run("area=Work", func(t *testing.T) {
 		req := makeReq(map[string]any{"area": "Work"})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -579,7 +579,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 
 	t.Run("contains_text matches note", func(t *testing.T) {
 		req := makeReq(map[string]any{"contains_text": "important"})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -593,7 +593,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 
 	t.Run("contains_text matches title", func(t *testing.T) {
 		req := makeReq(map[string]any{"contains_text": "anytime"})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -607,7 +607,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 
 	t.Run("in_trash=true includes trashed projects", func(t *testing.T) {
 		req := makeReq(map[string]any{"in_trash": true})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -628,7 +628,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 		// projAnytime is +30d, projToday is ~now; use +15d cutoff
 		cutoff := time.Now().Add(15 * 24 * time.Hour).Format("2006-01-02")
 		req := makeReq(map[string]any{"scheduled_after": cutoff})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -643,7 +643,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 
 	t.Run("created_before=2025-03-05", func(t *testing.T) {
 		req := makeReq(map[string]any{"created_before": "2025-03-05"})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -658,7 +658,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 
 	t.Run("created_after=2025-03-05", func(t *testing.T) {
 		req := makeReq(map[string]any{"created_after": "2025-03-05"})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 
 		projects := resultJSON[[]TaskOutput](t, result)
@@ -680,7 +680,7 @@ func TestHandleListProjectsFilters(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// handleListAreas
+// handleFindAreas
 // ---------------------------------------------------------------------------
 
 func TestHandleListAreas(t *testing.T) {
@@ -692,7 +692,7 @@ func TestHandleListAreas(t *testing.T) {
 	tmcp := newTestThingsMCP(t, fc)
 
 	req := makeReq(map[string]any{})
-	result, err := tmcp.handleListAreas(context.Background(), req)
+	result, err := tmcp.handleFindAreas(context.Background(), req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -717,7 +717,7 @@ func TestHandleListAreas(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// handleListTags
+// handleFindTags
 // ---------------------------------------------------------------------------
 
 func TestHandleListTags(t *testing.T) {
@@ -729,7 +729,7 @@ func TestHandleListTags(t *testing.T) {
 	tmcp := newTestThingsMCP(t, fc)
 
 	req := makeReq(map[string]any{})
-	result, err := tmcp.handleListTags(context.Background(), req)
+	result, err := tmcp.handleFindTags(context.Background(), req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -953,7 +953,7 @@ func TestHandleEditTask(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// handleListHeadings
+// handleFindHeadings
 // ---------------------------------------------------------------------------
 
 func TestHandleListHeadings(t *testing.T) {
@@ -978,7 +978,7 @@ func TestHandleListHeadings(t *testing.T) {
 
 	t.Run("lists headings for project", func(t *testing.T) {
 		req := makeReq(map[string]any{"project_uuid": "proj-1"})
-		result, err := tmcp.handleListHeadings(context.Background(), req)
+		result, err := tmcp.handleFindHeadings(context.Background(), req)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -996,7 +996,7 @@ func TestHandleListHeadings(t *testing.T) {
 
 	t.Run("missing project_uuid returns error", func(t *testing.T) {
 		req := makeReq(map[string]any{})
-		result, _ := tmcp.handleListHeadings(context.Background(), req)
+		result, _ := tmcp.handleFindHeadings(context.Background(), req)
 		assertIsError(t, result)
 	})
 }
@@ -1012,7 +1012,7 @@ func TestEmptyStateReturnsEmptyArrays(t *testing.T) {
 
 	t.Run("list tasks empty", func(t *testing.T) {
 		req := makeReq(map[string]any{})
-		result, _ := tmcp.handleListTasks(context.Background(), req)
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		assertNotError(t, result)
 		text := resultText(t, result)
 		if text != "[]" {
@@ -1022,7 +1022,7 @@ func TestEmptyStateReturnsEmptyArrays(t *testing.T) {
 
 	t.Run("list projects empty", func(t *testing.T) {
 		req := makeReq(map[string]any{})
-		result, _ := tmcp.handleListProjects(context.Background(), req)
+		result, _ := tmcp.handleFindProjects(context.Background(), req)
 		assertNotError(t, result)
 		text := resultText(t, result)
 		if text != "[]" {
@@ -1032,7 +1032,7 @@ func TestEmptyStateReturnsEmptyArrays(t *testing.T) {
 
 	t.Run("list areas empty", func(t *testing.T) {
 		req := makeReq(map[string]any{})
-		result, _ := tmcp.handleListAreas(context.Background(), req)
+		result, _ := tmcp.handleFindAreas(context.Background(), req)
 		assertNotError(t, result)
 		text := resultText(t, result)
 		if text != "[]" {
@@ -1042,7 +1042,7 @@ func TestEmptyStateReturnsEmptyArrays(t *testing.T) {
 
 	t.Run("list tags empty", func(t *testing.T) {
 		req := makeReq(map[string]any{})
-		result, _ := tmcp.handleListTags(context.Background(), req)
+		result, _ := tmcp.handleFindTags(context.Background(), req)
 		assertNotError(t, result)
 		text := resultText(t, result)
 		if text != "[]" {

@@ -12,14 +12,14 @@
 
 ---
 
-### Task 1: Update `handleListTasks` handler
+### Task 1: Update `handleFindTasks` handler
 
 **Files:**
-- Modify: `main.go:1536-1662` (`handleListTasks` function)
+- Modify: `main.go:1536-1662` (`handleFindTasks` function)
 
 **Step 1: Replace `isCompleted` bool with `statusFilter` string**
 
-In `handleListTasks`, change line 1551:
+In `handleFindTasks`, change line 1551:
 
 ```go
 // BEFORE:
@@ -65,15 +65,15 @@ Expected: clean build, no errors
 
 ```bash
 git add main.go
-git commit -m "Replace is_completed bool with status filter in handleListTasks"
+git commit -m "Replace is_completed bool with status filter in handleFindTasks"
 ```
 
 ---
 
-### Task 2: Update `handleListProjects` handler
+### Task 2: Update `handleFindProjects` handler
 
 **Files:**
-- Modify: `main.go:1779-1794` (`handleListProjects` function)
+- Modify: `main.go:1779-1794` (`handleFindProjects` function)
 
 **Step 1: Change the function signature to accept the request**
 
@@ -81,10 +81,10 @@ Replace line 1779:
 
 ```go
 // BEFORE:
-func (t *ThingsMCP) handleListProjects(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (t *ThingsMCP) handleFindProjects(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 
 // AFTER:
-func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (t *ThingsMCP) handleFindProjects(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 ```
 
 **Step 2: Add status parameter extraction**
@@ -124,7 +124,7 @@ default:
 projects = append(projects, t.taskToOutput(task))
 ```
 
-Note: This restructures the loop body from a single `if` with `append` inside to a `continue`-on-skip pattern matching `handleListTasks`.
+Note: This restructures the loop body from a single `if` with `append` inside to a `continue`-on-skip pattern matching `handleFindTasks`.
 
 **Step 4: Build to verify**
 
@@ -135,7 +135,7 @@ Expected: clean build, no errors
 
 ```bash
 git add main.go
-git commit -m "Add status filter to handleListProjects"
+git commit -m "Add status filter to handleFindProjects"
 ```
 
 ---
@@ -201,11 +201,11 @@ git commit -m "Add status filter to handleShowProject"
 ### Task 4: Update tool definitions
 
 **Files:**
-- Modify: `main.go:2345-2361` (`things_list_tasks` tool definition)
+- Modify: `main.go:2345-2361` (`things_find_tasks` tool definition)
 - Modify: `main.go:2380-2391` (`things_show_project` tool definition)
-- Modify: `main.go:2393-2402` (`things_list_projects` tool definition)
+- Modify: `main.go:2393-2402` (`things_find_projects` tool definition)
 
-**Step 1: Update `things_list_tasks` tool definition**
+**Step 1: Update `things_find_tasks` tool definition**
 
 Replace the `is_completed` parameter (line 2360):
 
@@ -231,7 +231,7 @@ After line 2386 (`mcp.WithString("uuid", ...)`), add:
 mcp.WithString("status", mcp.Description("Filter child tasks by status (default: pending — only active tasks)"), mcp.Enum("pending", "completed", "canceled")),
 ```
 
-**Step 3: Add `status` parameter to `things_list_projects` tool definition**
+**Step 3: Add `status` parameter to `things_find_projects` tool definition**
 
 After the annotation lines (line 2398), add:
 
@@ -274,7 +274,7 @@ Expected: no matches
 **Step 3: Grep to confirm all three handlers use `statusFilter`**
 
 Run: `grep -n 'statusFilter' main.go`
-Expected: matches in `handleListTasks`, `handleListProjects`, `handleShowProject`
+Expected: matches in `handleFindTasks`, `handleFindProjects`, `handleShowProject`
 
 **Step 4: Review diff**
 

@@ -1884,7 +1884,7 @@ func buildDiagSummary(steps []diagStep) diagSummary {
 // MCP Tool handlers
 // ---------------------------------------------------------------------------
 
-func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (t *ThingsMCP) handleFindTasks(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if err := t.syncAndRebuild(); err != nil {
 		return errResult(fmt.Sprintf("sync: %v", err)), nil
 	}
@@ -2193,7 +2193,7 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 	return jsonResult(out), nil
 }
 
-func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (t *ThingsMCP) handleFindProjects(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if err := t.syncAndRebuild(); err != nil {
 		return errResult(fmt.Sprintf("sync: %v", err)), nil
 	}
@@ -2359,7 +2359,7 @@ func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolReques
 	return jsonResult(projects), nil
 }
 
-func (t *ThingsMCP) handleListHeadings(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (t *ThingsMCP) handleFindHeadings(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	projectUUID, err := req.RequireString("project_uuid")
 	if err != nil {
 		return errResult("project_uuid is required"), nil
@@ -2385,7 +2385,7 @@ func (t *ThingsMCP) handleListHeadings(_ context.Context, req mcp.CallToolReques
 	return jsonResult(headings), nil
 }
 
-func (t *ThingsMCP) handleListAreas(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (t *ThingsMCP) handleFindAreas(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if err := t.syncAndRebuild(); err != nil {
 		return errResult(fmt.Sprintf("sync: %v", err)), nil
 	}
@@ -2404,7 +2404,7 @@ func (t *ThingsMCP) handleListAreas(_ context.Context, _ mcp.CallToolRequest) (*
 	return jsonResult(areas), nil
 }
 
-func (t *ThingsMCP) handleListTags(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (t *ThingsMCP) handleFindTags(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if err := t.syncAndRebuild(); err != nil {
 		return errResult(fmt.Sprintf("sync: %v", err)), nil
 	}
@@ -2911,7 +2911,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 	return []server.ServerTool{
 		// --- Read tools ---
 		{
-			Tool: mcp.NewTool("things_list_tasks",
+			Tool: mcp.NewTool("things_find_tasks",
 				mcp.WithDescription("List tasks from Things 3 with optional filters. Returns an array of task objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/tonight/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, reminderTime, recurrence, areas, project, tags. Default: only pending (active) tasks. Use status parameter to query completed or canceled tasks. Note: schedule=today includes both regular and tonight tasks; use schedule=tonight to filter only tonight tasks."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
@@ -2932,7 +2932,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("status", mcp.Description("Filter by task status (default: pending — only active tasks)"), mcp.Enum("pending", "completed", "canceled")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-				return t.handleListTasks(ctx, req)
+				return t.handleFindTasks(ctx, req)
 			}),
 		},
 		{
@@ -2963,7 +2963,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 			}),
 		},
 		{
-			Tool: mcp.NewTool("things_list_projects",
+			Tool: mcp.NewTool("things_find_projects",
 				mcp.WithDescription("List projects from Things 3 with optional filters. Returns an array of project objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/tonight/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, areas, tags. Default: only pending (active) projects. Use status parameter to query completed or canceled projects."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
@@ -2983,11 +2983,11 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("status", mcp.Description("Filter by project status (default: pending — only active projects)"), mcp.Enum("pending", "completed", "canceled")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-				return t.handleListProjects(ctx, req)
+				return t.handleFindProjects(ctx, req)
 			}),
 		},
 		{
-			Tool: mcp.NewTool("things_list_headings",
+			Tool: mcp.NewTool("things_find_headings",
 				mcp.WithDescription("List all headings within a Things 3 project. Returns an array of heading objects, each containing uuid and title. Use things_show_project to also see the tasks grouped under each heading."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
@@ -2996,11 +2996,11 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("project_uuid", mcp.Required(), mcp.Description("UUID of the project to list headings from")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-				return t.handleListHeadings(ctx, req)
+				return t.handleFindHeadings(ctx, req)
 			}),
 		},
 		{
-			Tool: mcp.NewTool("things_list_areas",
+			Tool: mcp.NewTool("things_find_areas",
 				mcp.WithDescription("List all areas in Things 3. Areas are top-level organizational containers for projects and tasks. Returns an array of area objects, each containing uuid and title."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
@@ -3008,11 +3008,11 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithOpenWorldHintAnnotation(false),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-				return t.handleListAreas(ctx, req)
+				return t.handleFindAreas(ctx, req)
 			}),
 		},
 		{
-			Tool: mcp.NewTool("things_list_tags",
+			Tool: mcp.NewTool("things_find_tags",
 				mcp.WithDescription("List all tags in Things 3. Returns an array of tag objects, each containing uuid, title, and optional fields: shorthand (abbreviation) and parentIds (for nested tags)."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
@@ -3020,24 +3020,24 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithOpenWorldHintAnnotation(false),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-				return t.handleListTags(ctx, req)
+				return t.handleFindTags(ctx, req)
 			}),
 		},
 
 		// --- Create tools ---
 		{
 			Tool: mcp.NewTool("things_create_task",
-				mcp.WithDescription("Create a new task in Things 3. Returns {status: \"created\", uuid, title}. The task is placed in Inbox by default; set schedule or project_uuid/area_uuid to organize it. Use things_list_projects and things_list_areas first to get valid UUIDs for assignment."),
+				mcp.WithDescription("Create a new task in Things 3. Returns {status: \"created\", uuid, title}. The task is placed in Inbox by default; set schedule or project_uuid/area_uuid to organize it. Use things_find_projects and things_find_areas first to get valid UUIDs for assignment."),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Task title")),
 				mcp.WithString("note", mcp.Description("Markdown-compatible note or description for the task")),
 				mcp.WithString("schedule", mcp.Description("When to schedule: today, tonight (today's tonight), anytime, someday, inbox, or a date (YYYY-MM-DD). Dates go to Upcoming and auto-move to Today when due.")),
 				mcp.WithString("deadline", mcp.Description("Deadline date in YYYY-MM-DD format")),
-				mcp.WithString("project_uuid", mcp.Description("UUID of the project to add this task to. Use things_list_projects to find project UUIDs.")),
-				mcp.WithString("heading_uuid", mcp.Description("UUID of the heading to place this task under within a project. Use things_list_headings to find heading UUIDs.")),
-				mcp.WithString("area_uuid", mcp.Description("UUID of the area to assign this task to. Use things_list_areas to find area UUIDs.")),
-				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs to apply. Use things_list_tags to find tag UUIDs.")),
+				mcp.WithString("project_uuid", mcp.Description("UUID of the project to add this task to. Use things_find_projects to find project UUIDs.")),
+				mcp.WithString("heading_uuid", mcp.Description("UUID of the heading to place this task under within a project. Use things_find_headings to find heading UUIDs.")),
+				mcp.WithString("area_uuid", mcp.Description("UUID of the area to assign this task to. Use things_find_areas to find area UUIDs.")),
+				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs to apply. Use things_find_tags to find tag UUIDs.")),
 				mcp.WithString("checklist", mcp.Description("Comma-separated checklist item titles to create within the task")),
 				mcp.WithString("reminder_date", mcp.Description("Reminder date in YYYY-MM-DD format. Must be used together with reminder_time.")),
 				mcp.WithString("reminder_time", mcp.Description("Reminder time in HH:MM 24-hour format (e.g. 09:00, 14:30). Must be used together with reminder_date.")),
@@ -3053,7 +3053,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Heading title")),
-				mcp.WithString("project_uuid", mcp.Required(), mcp.Description("UUID of the project to add the heading to. Use things_list_projects to find project UUIDs.")),
+				mcp.WithString("project_uuid", mcp.Required(), mcp.Description("UUID of the project to add the heading to. Use things_find_projects to find project UUIDs.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleCreateHeading(ctx, req)
@@ -3068,8 +3068,8 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("note", mcp.Description("Markdown-compatible note or description for the project")),
 				mcp.WithString("schedule", mcp.Description("When to schedule: today, anytime (default), someday, or a date (YYYY-MM-DD).")),
 				mcp.WithString("deadline", mcp.Description("Deadline date in YYYY-MM-DD format")),
-				mcp.WithString("area_uuid", mcp.Description("UUID of the area to assign this project to. Use things_list_areas to find area UUIDs.")),
-				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs to apply. Use things_list_tags to find tag UUIDs.")),
+				mcp.WithString("area_uuid", mcp.Description("UUID of the area to assign this project to. Use things_find_areas to find area UUIDs.")),
+				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs to apply. Use things_find_tags to find tag UUIDs.")),
 				mcp.WithString("reminder_date", mcp.Description("Reminder date in YYYY-MM-DD format. Must be used together with reminder_time.")),
 				mcp.WithString("reminder_time", mcp.Description("Reminder time in HH:MM 24-hour format (e.g. 09:00, 14:30). Must be used together with reminder_date.")),
 				mcp.WithString("recurrence", mcp.Description("Recurrence rule: daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days, every N weeks.")),
@@ -3096,7 +3096,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("name", mcp.Required(), mcp.Description("Tag name")),
 				mcp.WithString("shorthand", mcp.Description("Short abbreviation for the tag")),
-				mcp.WithString("parent_uuid", mcp.Description("UUID of the parent tag for nesting. Use things_list_tags to find existing tag UUIDs.")),
+				mcp.WithString("parent_uuid", mcp.Description("UUID of the parent tag for nesting. Use things_find_tags to find existing tag UUIDs.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleCreateTag(ctx, req)
@@ -3110,7 +3110,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the area to rename. Use things_list_areas to find area UUIDs.")),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the area to rename. Use things_find_areas to find area UUIDs.")),
 				mcp.WithString("name", mcp.Required(), mcp.Description("New area name")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -3123,7 +3123,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithDestructiveHintAnnotation(true),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the area to delete. Use things_list_areas to find area UUIDs.")),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the area to delete. Use things_find_areas to find area UUIDs.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleDeleteArea(ctx, req)
@@ -3135,10 +3135,10 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the tag to edit. Use things_list_tags to find tag UUIDs.")),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the tag to edit. Use things_find_tags to find tag UUIDs.")),
 				mcp.WithString("name", mcp.Description("New tag name")),
 				mcp.WithString("shorthand", mcp.Description("New short abbreviation for the tag")),
-				mcp.WithString("parent_uuid", mcp.Description("UUID of the new parent tag for nesting. Use things_list_tags to find tag UUIDs.")),
+				mcp.WithString("parent_uuid", mcp.Description("UUID of the new parent tag for nesting. Use things_find_tags to find tag UUIDs.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleEditTag(ctx, req)
@@ -3150,7 +3150,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithDestructiveHintAnnotation(true),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the tag to delete. Use things_list_tags to find tag UUIDs.")),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the tag to delete. Use things_find_tags to find tag UUIDs.")),
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleDeleteTag(ctx, req)
@@ -3169,10 +3169,10 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("note", mcp.Description("New note content (replaces existing note)")),
 				mcp.WithString("schedule", mcp.Description("When to schedule: today, tonight (today's tonight), anytime, someday, inbox, or a date (YYYY-MM-DD). Dates go to Upcoming and auto-move to Today when due.")),
 				mcp.WithString("deadline", mcp.Description("Deadline date in YYYY-MM-DD format")),
-				mcp.WithString("area_uuid", mcp.Description("UUID of the area to assign to. Use things_list_areas to find area UUIDs.")),
-				mcp.WithString("project_uuid", mcp.Description("UUID of the project to move to. Use things_list_projects to find project UUIDs.")),
-				mcp.WithString("heading_uuid", mcp.Description("UUID of the heading to place under. Use things_list_headings to find heading UUIDs.")),
-				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs (replaces all existing tags). Use things_list_tags to find tag UUIDs.")),
+				mcp.WithString("area_uuid", mcp.Description("UUID of the area to assign to. Use things_find_areas to find area UUIDs.")),
+				mcp.WithString("project_uuid", mcp.Description("UUID of the project to move to. Use things_find_projects to find project UUIDs.")),
+				mcp.WithString("heading_uuid", mcp.Description("UUID of the heading to place under. Use things_find_headings to find heading UUIDs.")),
+				mcp.WithString("tags", mcp.Description("Comma-separated tag UUIDs (replaces all existing tags). Use things_find_tags to find tag UUIDs.")),
 				mcp.WithString("reminder_date", mcp.Description("Reminder date in YYYY-MM-DD format, or \"none\" to clear. Must be used together with reminder_time.")),
 				mcp.WithString("reminder_time", mcp.Description("Reminder time in HH:MM 24-hour format (e.g. 09:00, 14:30). Must be used together with reminder_date.")),
 				mcp.WithString("recurrence", mcp.Description("Recurrence rule: daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days, every N weeks. Use \"none\" to clear.")),

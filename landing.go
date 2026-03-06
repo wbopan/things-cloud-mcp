@@ -833,7 +833,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">things_list_tasks</div>
+    <div class="tool-entry-name">things_find_tasks</div>
     <div class="tool-entry-desc">List tasks with optional filters</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -873,7 +873,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">things_list_projects</div>
+    <div class="tool-entry-name">things_find_projects</div>
     <div class="tool-entry-desc">List projects with optional filters</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -893,7 +893,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">things_list_headings</div>
+    <div class="tool-entry-name">things_find_headings</div>
     <div class="tool-entry-desc">List headings in a project</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
@@ -902,13 +902,13 @@ var DocsPageHTML = `<!DOCTYPE html>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">things_list_areas</div>
+    <div class="tool-entry-name">things_find_areas</div>
     <div class="tool-entry-desc">List all areas</div>
     <div class="no-params">No parameters</div>
   </div>
 
   <div class="tool-entry">
-    <div class="tool-entry-name">things_list_tags</div>
+    <div class="tool-entry-name">things_find_tags</div>
     <div class="tool-entry-desc">List all tags</div>
     <div class="no-params">No parameters</div>
   </div>
