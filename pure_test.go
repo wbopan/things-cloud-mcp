@@ -349,27 +349,32 @@ func TestEmptyNote(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestScheduleString(t *testing.T) {
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	past := time.Now().Add(-24 * time.Hour)
 	future := time.Now().Add(24 * time.Hour)
 
 	tests := []struct {
-		name     string
-		schedule thingscloud.TaskSchedule
-		date     *time.Time
-		want     string
+		name        string
+		schedule    thingscloud.TaskSchedule
+		date        *time.Time
+		startBucket int
+		want        string
 	}{
-		{"st=0 → inbox", thingscloud.TaskScheduleInbox, nil, "inbox"},
-		{"st=1 + no date → anytime", thingscloud.TaskScheduleAnytime, nil, "anytime"},
-		{"st=1 + past date → anytime", thingscloud.TaskScheduleAnytime, &past, "anytime"},
-		{"st=1 + future date → anytime", thingscloud.TaskScheduleAnytime, &future, "anytime"},
-		{"st=2 + no date → someday", thingscloud.TaskScheduleSomeday, nil, "someday"},
-		{"st=2 + date → upcoming", thingscloud.TaskScheduleSomeday, &future, "upcoming"},
-		{"unknown schedule → inbox", thingscloud.TaskSchedule(99), nil, "inbox"},
+		{"st=0 → inbox", thingscloud.TaskScheduleInbox, nil, 0, "inbox"},
+		{"st=1 + no date → anytime", thingscloud.TaskScheduleAnytime, nil, 0, "anytime"},
+		{"st=1 + past date → anytime", thingscloud.TaskScheduleAnytime, &past, 0, "anytime"},
+		{"st=1 + future date → anytime", thingscloud.TaskScheduleAnytime, &future, 0, "anytime"},
+		{"st=1 + today → today", thingscloud.TaskScheduleAnytime, &today, 0, "today"},
+		{"st=1 + today + sb=1 → tonight", thingscloud.TaskScheduleAnytime, &today, 1, "tonight"},
+		{"st=2 + no date → someday", thingscloud.TaskScheduleSomeday, nil, 0, "someday"},
+		{"st=2 + date → upcoming", thingscloud.TaskScheduleSomeday, &future, 0, "upcoming"},
+		{"unknown schedule → inbox", thingscloud.TaskSchedule(99), nil, 0, "inbox"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := scheduleString(tt.schedule, tt.date)
+			got := scheduleString(tt.schedule, tt.date, tt.startBucket)
 			if got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}

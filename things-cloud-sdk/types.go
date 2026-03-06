@@ -199,6 +199,7 @@ type Task struct {
 	TodayIndex       int
 	TodayIndexRefDate *time.Time
 	DueOrder         int
+	StartBucket      int // 0=default, 1=tonight (column 29: startBucket, wire: sb)
 	AlarmTimeOffset *int
 	TagIDs          []string
 	RecurrenceIDs   []string
@@ -233,7 +234,7 @@ type TaskActionItemPayload struct {
 	IsCompletedByChildren     *bool                  `json:"icp,omitempty"`
 	IsCompletedCount          *int                   `json:"icc,omitempty"`
 	InstanceCreationStartDate *Timestamp             `json:"icsd,omitempty"`
-	SubtaskBehavior           *int                   `json:"sb,omitempty"`
+	StartBucket               *int                   `json:"sb,omitempty"`
 	DelegateIDs               *[]string              `json:"dl,omitempty"`
 	LastActionItemID          *Timestamp             `json:"lai,omitempty"`
 	ReminderDate              *Timestamp             `json:"rmd,omitempty"`

@@ -336,6 +336,7 @@ func newTaskCreatePayload(title string, opts map[string]string) TaskCreatePayloa
 			st = 1
 		}
 	}
+	sb := 0
 	if v, ok := opts["schedule"]; ok {
 		switch v {
 		case "today":
@@ -343,6 +344,12 @@ func newTaskCreatePayload(title string, opts map[string]string) TaskCreatePayloa
 			today := todayMidnightUTC()
 			sr = &today
 			tir = &today
+		case "tonight":
+			st = 1
+			today := todayMidnightUTC()
+			sr = &today
+			tir = &today
+			sb = 1
 		case "anytime":
 			st = 1
 		case "someday":
@@ -429,7 +436,7 @@ func newTaskCreatePayload(title string, opts map[string]string) TaskCreatePayloa
 		Tg: tg, Agr: agr, Ix: 0, Cd: now, Lt: false,
 		Icc: 0, Md: nil, Ti: 0, Dd: dd, Ato: ato,
 		Nt: nt, Icsd: icsd, Pr: pr, Rp: nil, Acrd: nil,
-		Sp: nil, Sb: 0, Rr: rr, Xx: defaultExtension(),
+		Sp: nil, Sb: sb, Rr: rr, Xx: defaultExtension(),
 	}
 }
 
@@ -470,6 +477,7 @@ func (u *taskUpdate) Schedule(st int, sr, tir any) *taskUpdate {
 	u.fields["tir"] = tir
 	return u
 }
+func (u *taskUpdate) StartBucket(sb int) *taskUpdate { u.fields["sb"] = sb; return u }
 func (u *taskUpdate) Recurrence(rr json.RawMessage) *taskUpdate {
 	u.fields["rr"] = rr
 	return u
@@ -534,12 +542,15 @@ func statusString(s thingscloud.TaskStatus) string {
 	}
 }
 
-func scheduleString(st thingscloud.TaskSchedule, scheduledDate *time.Time) string {
+func scheduleString(st thingscloud.TaskSchedule, scheduledDate *time.Time, startBucket int) string {
 	switch st {
 	case 0:
 		return "inbox"
 	case 1:
 		if scheduledDate != nil && isToday(*scheduledDate) {
+			if startBucket == 1 {
+				return "tonight"
+			}
 			return "today"
 		}
 		return "anytime"
@@ -580,7 +591,7 @@ func (t *ThingsMCP) taskToOutput(task *thingscloud.Task) TaskOutput {
 		Title:    task.Title,
 		Note:     task.Note,
 		Status:   statusString(task.Status),
-		Schedule: scheduleString(task.Schedule, task.ScheduledDate),
+		Schedule: scheduleString(task.Schedule, task.ScheduledDate, task.StartBucket),
 	}
 	if task.ScheduledDate != nil && task.ScheduledDate.Year() > 1970 {
 		s := task.ScheduledDate.Format("2006-01-02")
@@ -1985,8 +1996,12 @@ func (t *ThingsMCP) handleListTasks(_ context.Context, req mcp.CallToolRequest) 
 				if !isScheduledForTodayOrPast(task.Schedule, task.ScheduledDate) {
 					continue
 				}
+			} else if schedule == "tonight" {
+				if !isScheduledForTodayOrPast(task.Schedule, task.ScheduledDate) || task.StartBucket != 1 {
+					continue
+				}
 			} else {
-				taskSchedule := scheduleString(task.Schedule, task.ScheduledDate)
+				taskSchedule := scheduleString(task.Schedule, task.ScheduledDate, task.StartBucket)
 				if taskSchedule != schedule {
 					continue
 				}
@@ -2281,8 +2296,12 @@ func (t *ThingsMCP) handleListProjects(_ context.Context, req mcp.CallToolReques
 				if !isScheduledForTodayOrPast(task.Schedule, task.ScheduledDate) {
 					continue
 				}
+			} else if schedule == "tonight" {
+				if !isScheduledForTodayOrPast(task.Schedule, task.ScheduledDate) || task.StartBucket != 1 {
+					continue
+				}
 			} else {
-				taskSchedule := scheduleString(task.Schedule, task.ScheduledDate)
+				taskSchedule := scheduleString(task.Schedule, task.ScheduledDate, task.StartBucket)
 				if taskSchedule != schedule {
 					continue
 				}
@@ -2691,13 +2710,16 @@ func (t *ThingsMCP) handleEditTask(_ context.Context, req mcp.CallToolRequest) (
 		switch sched {
 		case "today":
 			today := todayMidnightUTC()
-			u.Schedule(1, today, today)
+			u.Schedule(1, today, today).StartBucket(0)
+		case "tonight":
+			today := todayMidnightUTC()
+			u.Schedule(1, today, today).StartBucket(1)
 		case "anytime":
-			u.Schedule(1, nil, nil)
+			u.Schedule(1, nil, nil).StartBucket(0)
 		case "someday":
-			u.Schedule(2, nil, nil)
+			u.Schedule(2, nil, nil).StartBucket(0)
 		case "inbox":
-			u.Schedule(0, nil, nil)
+			u.Schedule(0, nil, nil).StartBucket(0)
 		default:
 			// Try parsing as YYYY-MM-DD date
 			if dt := parseDate(sched); dt != nil {
@@ -2890,12 +2912,12 @@ func defineTools(um *UserManager) []server.ServerTool {
 		// --- Read tools ---
 		{
 			Tool: mcp.NewTool("things_list_tasks",
-				mcp.WithDescription("List tasks from Things 3 with optional filters. Returns an array of task objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, reminderTime, recurrence, areas, project, tags. Default: only pending (active) tasks. Use status parameter to query completed or canceled tasks."),
+				mcp.WithDescription("List tasks from Things 3 with optional filters. Returns an array of task objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/tonight/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, reminderTime, recurrence, areas, project, tags. Default: only pending (active) tasks. Use status parameter to query completed or canceled tasks. Note: schedule=today includes both regular and tonight tasks; use schedule=tonight to filter only tonight tasks."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("schedule", mcp.Description("Filter by schedule"), mcp.Enum("inbox", "today", "anytime", "someday", "upcoming")),
+				mcp.WithString("schedule", mcp.Description("Filter by schedule"), mcp.Enum("inbox", "today", "tonight", "anytime", "someday", "upcoming")),
 				mcp.WithString("scheduled_before", mcp.Description("Return tasks scheduled before this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("scheduled_after", mcp.Description("Return tasks scheduled after this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("deadline_before", mcp.Description("Return tasks with deadline before this date (YYYY-MM-DD, exclusive)")),
@@ -2942,12 +2964,12 @@ func defineTools(um *UserManager) []server.ServerTool {
 		},
 		{
 			Tool: mcp.NewTool("things_list_projects",
-				mcp.WithDescription("List projects from Things 3 with optional filters. Returns an array of project objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, areas, tags. Default: only pending (active) projects. Use status parameter to query completed or canceled projects."),
+				mcp.WithDescription("List projects from Things 3 with optional filters. Returns an array of project objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/tonight/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, areas, tags. Default: only pending (active) projects. Use status parameter to query completed or canceled projects."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
 				mcp.WithOpenWorldHintAnnotation(false),
-				mcp.WithString("schedule", mcp.Description("Filter by schedule"), mcp.Enum("inbox", "today", "anytime", "someday", "upcoming")),
+				mcp.WithString("schedule", mcp.Description("Filter by schedule"), mcp.Enum("inbox", "today", "tonight", "anytime", "someday", "upcoming")),
 				mcp.WithString("scheduled_before", mcp.Description("Return projects scheduled before this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("scheduled_after", mcp.Description("Return projects scheduled after this date (YYYY-MM-DD, exclusive)")),
 				mcp.WithString("deadline_before", mcp.Description("Return projects with deadline before this date (YYYY-MM-DD, exclusive)")),
@@ -3010,7 +3032,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithOpenWorldHintAnnotation(false),
 				mcp.WithString("title", mcp.Required(), mcp.Description("Task title")),
 				mcp.WithString("note", mcp.Description("Markdown-compatible note or description for the task")),
-				mcp.WithString("schedule", mcp.Description("When to schedule: today, anytime, someday, inbox, or a date (YYYY-MM-DD). Dates go to Upcoming and auto-move to Today when due.")),
+				mcp.WithString("schedule", mcp.Description("When to schedule: today, tonight (today's tonight), anytime, someday, inbox, or a date (YYYY-MM-DD). Dates go to Upcoming and auto-move to Today when due.")),
 				mcp.WithString("deadline", mcp.Description("Deadline date in YYYY-MM-DD format")),
 				mcp.WithString("project_uuid", mcp.Description("UUID of the project to add this task to. Use things_list_projects to find project UUIDs.")),
 				mcp.WithString("heading_uuid", mcp.Description("UUID of the heading to place this task under within a project. Use things_list_headings to find heading UUIDs.")),
@@ -3145,7 +3167,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 				mcp.WithString("uuid", mcp.Required(), mcp.Description("UUID of the task or project to edit")),
 				mcp.WithString("title", mcp.Description("New title")),
 				mcp.WithString("note", mcp.Description("New note content (replaces existing note)")),
-				mcp.WithString("schedule", mcp.Description("When to schedule: today, anytime, someday, inbox, or a date (YYYY-MM-DD). Dates go to Upcoming and auto-move to Today when due.")),
+				mcp.WithString("schedule", mcp.Description("When to schedule: today, tonight (today's tonight), anytime, someday, inbox, or a date (YYYY-MM-DD). Dates go to Upcoming and auto-move to Today when due.")),
 				mcp.WithString("deadline", mcp.Description("Deadline date in YYYY-MM-DD format")),
 				mcp.WithString("area_uuid", mcp.Description("UUID of the area to assign to. Use things_list_areas to find area UUIDs.")),
 				mcp.WithString("project_uuid", mcp.Description("UUID of the project to move to. Use things_list_projects to find project UUIDs.")),

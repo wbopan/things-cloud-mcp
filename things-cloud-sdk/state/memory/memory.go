@@ -100,6 +100,9 @@ func (s *State) updateTask(item things.TaskActionItem, rawP json.RawMessage) *th
 			}
 		}
 	}
+	if item.P.StartBucket != nil {
+		t.StartBucket = *item.P.StartBucket
+	}
 	if item.P.AlarmTimeOffset != nil {
 		t.AlarmTimeOffset = item.P.AlarmTimeOffset
 	}

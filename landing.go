@@ -837,7 +837,7 @@ var DocsPageHTML = `<!DOCTYPE html>
     <div class="tool-entry-desc">List tasks with optional filters</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
-      <tr><td><span class="param-name">schedule</span></td><td class="param-type">enum</td><td>inbox, today, anytime, someday, upcoming</td></tr>
+      <tr><td><span class="param-name">schedule</span></td><td class="param-type">enum</td><td>inbox, today, tonight, anytime, someday, upcoming</td></tr>
       <tr><td><span class="param-name">scheduled_before</span></td><td class="param-type">string</td><td>YYYY-MM-DD</td></tr>
       <tr><td><span class="param-name">scheduled_after</span></td><td class="param-type">string</td><td>YYYY-MM-DD</td></tr>
       <tr><td><span class="param-name">deadline_before</span></td><td class="param-type">string</td><td>YYYY-MM-DD</td></tr>
@@ -877,7 +877,7 @@ var DocsPageHTML = `<!DOCTYPE html>
     <div class="tool-entry-desc">List projects with optional filters</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
-      <tr><td><span class="param-name">schedule</span></td><td class="param-type">enum</td><td>inbox, today, anytime, someday, upcoming</td></tr>
+      <tr><td><span class="param-name">schedule</span></td><td class="param-type">enum</td><td>inbox, today, tonight, anytime, someday, upcoming</td></tr>
       <tr><td><span class="param-name">scheduled_before</span></td><td class="param-type">string</td><td>YYYY-MM-DD</td></tr>
       <tr><td><span class="param-name">scheduled_after</span></td><td class="param-type">string</td><td>YYYY-MM-DD</td></tr>
       <tr><td><span class="param-name">deadline_before</span></td><td class="param-type">string</td><td>YYYY-MM-DD</td></tr>
@@ -935,7 +935,7 @@ var DocsPageHTML = `<!DOCTYPE html>
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
       <tr><td><span class="param-name">title</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Task title</td></tr>
       <tr><td><span class="param-name">note</span></td><td class="param-type">string</td><td>Task notes</td></tr>
-      <tr><td><span class="param-name">schedule</span></td><td class="param-type">string</td><td>today, anytime, someday, inbox, or YYYY-MM-DD (Upcoming, auto-moves to Today when due)</td></tr>
+      <tr><td><span class="param-name">schedule</span></td><td class="param-type">string</td><td>today, tonight, anytime, someday, inbox, or YYYY-MM-DD (Upcoming, auto-moves to Today when due)</td></tr>
       <tr><td><span class="param-name">deadline</span></td><td class="param-type">string</td><td>YYYY-MM-DD</td></tr>
       <tr><td><span class="param-name">project_uuid</span></td><td class="param-type">string</td><td>Assign to project</td></tr>
       <tr><td><span class="param-name">heading_uuid</span></td><td class="param-type">string</td><td>Assign to heading within project</td></tr>
@@ -1010,7 +1010,7 @@ var DocsPageHTML = `<!DOCTYPE html>
       <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Item UUID</td></tr>
       <tr><td><span class="param-name">title</span></td><td class="param-type">string</td><td>New title</td></tr>
       <tr><td><span class="param-name">note</span></td><td class="param-type">string</td><td>New notes</td></tr>
-      <tr><td><span class="param-name">schedule</span></td><td class="param-type">string</td><td>today, anytime, someday, inbox, or YYYY-MM-DD (Upcoming, auto-moves to Today when due)</td></tr>
+      <tr><td><span class="param-name">schedule</span></td><td class="param-type">string</td><td>today, tonight, anytime, someday, inbox, or YYYY-MM-DD (Upcoming, auto-moves to Today when due)</td></tr>
       <tr><td><span class="param-name">deadline</span></td><td class="param-type">string</td><td>YYYY-MM-DD</td></tr>
       <tr><td><span class="param-name">area_uuid</span></td><td class="param-type">string</td><td>Move to area</td></tr>
       <tr><td><span class="param-name">project_uuid</span></td><td class="param-type">string</td><td>Move to project</td></tr>
@@ -1112,7 +1112,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   "title": "...",
   "note": "...",
   "status": "pending | completed | canceled",
-  "schedule": "inbox | today | anytime | someday | upcoming",
+  "schedule": "inbox | today | tonight | anytime | someday | upcoming",
   "scheduledDate": "YYYY-MM-DD",
   "deadlineDate": "YYYY-MM-DD",
   "creationDate": "YYYY-MM-DDTHH:MM:SSZ",
