@@ -3358,6 +3358,19 @@ func defineTools(um *UserManager) []server.ServerTool {
 				return t.handleFindTags(ctx, req)
 			}),
 		},
+		{
+			Tool: mcp.NewTool("things_overview",
+				mcp.WithDescription("Returns a comprehensive snapshot of the user's task landscape in a single call. Includes all tags, the full area-to-project hierarchy (with IDs), today's tasks, and upcoming scheduled/due tasks within a configurable lookahead window. Use this as the first call in a session to orient yourself before drilling into specific tasks or projects."),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithNumber("lookahead_days", mcp.Description("Number of days ahead to scan for upcoming scheduled or due tasks. Tasks within (today, today+N] are included. Default: 7")),
+			),
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleOverview(ctx, req)
+			}),
+		},
 
 		// --- Create tools ---
 		{
