@@ -2141,9 +2141,14 @@ func (t *ThingsMCP) handleFindTasks(_ context.Context, req mcp.CallToolRequest) 
 		filtered = append(filtered, task)
 	}
 
-	// Sort: today/tonight by tir DESC + ti ASC; all others by ix ASC
+	// Sort: today/tonight by startBucket ASC (day before tonight),
+	// then tir DESC + ti ASC; all others by ix ASC
 	if schedule == "today" || schedule == "tonight" {
 		sort.Slice(filtered, func(i, j int) bool {
+			// Tonight tasks (sb=1) sort after daytime tasks (sb=0)
+			if filtered[i].StartBucket != filtered[j].StartBucket {
+				return filtered[i].StartBucket < filtered[j].StartBucket
+			}
 			ti, tj := filtered[i].TodayIndexRefDate, filtered[j].TodayIndexRefDate
 			switch {
 			case ti == nil && tj == nil:
