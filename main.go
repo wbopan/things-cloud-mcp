@@ -367,6 +367,21 @@ func sortByIndex(tasks []*thingscloud.Task) {
 	sort.Slice(tasks, func(i, j int) bool { return tasks[i].Index < tasks[j].Index })
 }
 
+// effectiveUpcomingDate returns the earliest of ScheduledDate and DeadlineDate.
+// Used to sort upcoming tasks by their nearest relevant date.
+func effectiveUpcomingDate(task *thingscloud.Task) time.Time {
+	var best time.Time
+	if task.ScheduledDate != nil {
+		best = *task.ScheduledDate
+	}
+	if task.DeadlineDate != nil {
+		if best.IsZero() || task.DeadlineDate.Before(best) {
+			best = *task.DeadlineDate
+		}
+	}
+	return best
+}
+
 // ---------------------------------------------------------------------------
 // Payload builders
 // ---------------------------------------------------------------------------
@@ -2631,6 +2646,163 @@ func (t *ThingsMCP) handleFindTags(_ context.Context, _ mcp.CallToolRequest) (*m
 	return jsonResult(tags), nil
 }
 
+func (t *ThingsMCP) handleOverview(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := t.syncAndRebuild(); err != nil {
+		return errResult(fmt.Sprintf("sync: %v", err)), nil
+	}
+	state := t.getState()
+
+	lookahead := req.GetInt("lookahead_days", 7)
+	if lookahead <= 0 {
+		lookahead = 7
+	}
+
+	// --- Tags ---
+	type TagOut struct {
+		UUID      string   `json:"uuid"`
+		Title     string   `json:"title"`
+		Shorthand string   `json:"shorthand,omitempty"`
+		ParentIDs []string `json:"parentIds,omitempty"`
+	}
+	var tags []TagOut
+	for _, tag := range state.Tags {
+		tags = append(tags, TagOut{
+			UUID:      tag.UUID,
+			Title:     tag.Title,
+			Shorthand: tag.ShortHand,
+			ParentIDs: tag.ParentTagIDs,
+		})
+	}
+	if tags == nil {
+		tags = []TagOut{}
+	}
+
+	// --- Area → Project tree ---
+	type AreaOut struct {
+		UUID     string       `json:"uuid"`
+		Title    string       `json:"title"`
+		Projects []TaskOutput `json:"projects"`
+	}
+	areaMap := make(map[string]*AreaOut)
+	areaProjects := make(map[string][]*thingscloud.Task) // area UUID → project tasks
+	var areaOrder []string
+	for _, area := range state.Areas {
+		areaMap[area.UUID] = &AreaOut{UUID: area.UUID, Title: area.Title, Projects: []TaskOutput{}}
+		areaOrder = append(areaOrder, area.UUID)
+	}
+	sort.Slice(areaOrder, func(i, j int) bool {
+		return areaMap[areaOrder[i]].Title < areaMap[areaOrder[j]].Title
+	})
+	var noAreaProjects []*thingscloud.Task
+
+	for _, task := range state.Tasks {
+		if task.Type != thingscloud.TaskTypeProject || task.Status != 0 || task.InTrash {
+			continue
+		}
+		placed := false
+		for _, aid := range task.AreaIDs {
+			if _, ok := areaMap[aid]; ok {
+				areaProjects[aid] = append(areaProjects[aid], task)
+				placed = true
+				break
+			}
+		}
+		if !placed {
+			noAreaProjects = append(noAreaProjects, task)
+		}
+	}
+
+	var areas []AreaOut
+	for _, id := range areaOrder {
+		a := areaMap[id]
+		projs := areaProjects[id]
+		sortByIndex(projs)
+		for _, p := range projs {
+			a.Projects = append(a.Projects, t.taskToOutput(p))
+		}
+		areas = append(areas, *a)
+	}
+	if len(noAreaProjects) > 0 {
+		sortByIndex(noAreaProjects)
+		noArea := AreaOut{UUID: "", Title: "(No Area)", Projects: make([]TaskOutput, 0, len(noAreaProjects))}
+		for _, p := range noAreaProjects {
+			noArea.Projects = append(noArea.Projects, t.taskToOutput(p))
+		}
+		areas = append(areas, noArea)
+	}
+	if areas == nil {
+		areas = []AreaOut{}
+	}
+
+	// --- Today tasks ---
+	todaySet := make(map[string]bool)
+	var todayRaw []*thingscloud.Task
+	now := time.Now().UTC()
+	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
+	cutoff := todayEnd.AddDate(0, 0, lookahead)
+
+	for _, task := range state.Tasks {
+		if task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
+			continue
+		}
+		if task.Status != 0 || task.InTrash {
+			continue
+		}
+		if isScheduledForTodayOrPast(task) {
+			todayRaw = append(todayRaw, task)
+			todaySet[task.UUID] = true
+		}
+	}
+	sortByIndex(todayRaw)
+	todayTasks := make([]TaskOutput, 0, len(todayRaw))
+	for _, task := range todayRaw {
+		todayTasks = append(todayTasks, t.taskToOutput(task))
+	}
+
+	// --- Upcoming tasks ---
+	var upcomingRaw []*thingscloud.Task
+	for _, task := range state.Tasks {
+		if task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
+			continue
+		}
+		if task.Status != 0 || task.InTrash {
+			continue
+		}
+		if todaySet[task.UUID] {
+			continue
+		}
+		inWindow := false
+		if task.ScheduledDate != nil && task.ScheduledDate.After(todayEnd) && !task.ScheduledDate.After(cutoff) {
+			inWindow = true
+		}
+		if task.DeadlineDate != nil && task.DeadlineDate.After(todayEnd) && !task.DeadlineDate.After(cutoff) {
+			inWindow = true
+		}
+		if inWindow {
+			upcomingRaw = append(upcomingRaw, task)
+		}
+	}
+	sort.Slice(upcomingRaw, func(i, j int) bool {
+		ei := effectiveUpcomingDate(upcomingRaw[i])
+		ej := effectiveUpcomingDate(upcomingRaw[j])
+		return ei.Before(ej)
+	})
+	upcomingTasks := make([]TaskOutput, 0, len(upcomingRaw))
+	for _, task := range upcomingRaw {
+		upcomingTasks = append(upcomingTasks, t.taskToOutput(task))
+	}
+
+	// --- Assemble ---
+	result := struct {
+		Tags          []TagOut     `json:"tags"`
+		Areas         []AreaOut    `json:"areas"`
+		TodayTasks    []TaskOutput `json:"todayTasks"`
+		UpcomingTasks []TaskOutput `json:"upcomingTasks"`
+	}{tags, areas, todayTasks, upcomingTasks}
+
+	return jsonResult(result), nil
+}
+
 func (t *ThingsMCP) handleCreateTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	title, err := req.RequireString("title")
 	if err != nil {
@@ -3229,6 +3401,19 @@ func defineTools(um *UserManager) []server.ServerTool {
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleFindTags(ctx, req)
+			}),
+		},
+		{
+			Tool: mcp.NewTool("things_overview",
+				mcp.WithDescription("Returns a comprehensive snapshot of the user's task landscape in a single call. Includes all tags, the full area-to-project hierarchy (with IDs), today's tasks, and upcoming scheduled/due tasks within a configurable lookahead window. Use this as the first call in a session to orient yourself before drilling into specific tasks or projects."),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithNumber("lookahead_days", mcp.Description("Number of days ahead to scan for upcoming scheduled or due tasks. Tasks within (today, today+N] are included. Default: 7")),
+			),
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleOverview(ctx, req)
 			}),
 		},
 
