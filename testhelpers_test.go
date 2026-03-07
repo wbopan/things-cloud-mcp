@@ -252,6 +252,25 @@ func withTrashed() taskOption {
 	}
 }
 
+func withIndex(n int) taskOption {
+	return func(p *thingscloud.TaskActionItemPayload) {
+		p.Index = &n
+	}
+}
+
+func withTodayIndex(n int) taskOption {
+	return func(p *thingscloud.TaskActionItemPayload) {
+		p.TaskIndex = &n
+	}
+}
+
+func withTodayIndexRefDate(t time.Time) taskOption {
+	return func(p *thingscloud.TaskActionItemPayload) {
+		ts := thingscloud.Timestamp(t)
+		p.TaskIR = &ts
+	}
+}
+
 func withNote(text string) taskOption {
 	return func(p *thingscloud.TaskActionItemPayload) {
 		note := thingscloud.Note{

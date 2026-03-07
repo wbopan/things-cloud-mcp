@@ -1050,3 +1050,182 @@ func TestEmptyStateReturnsEmptyArrays(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// Sort order tests
+// ---------------------------------------------------------------------------
+
+func TestHandleFindTasksSortByIndex(t *testing.T) {
+	fc := newFakeCloud("test@example.com",
+		makeTaskItem("task-a", withTitle("Third"), withIndex(30)),
+		makeTaskItem("task-b", withTitle("First"), withIndex(10)),
+		makeTaskItem("task-c", withTitle("Second"), withIndex(20)),
+	)
+	defer fc.Close()
+	tmcp := newTestThingsMCP(t, fc)
+
+	req := makeReq(map[string]any{})
+	result, err := tmcp.handleFindTasks(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertNotError(t, result)
+
+	tasks := resultJSON[[]TaskOutput](t, result)
+	if len(tasks) != 3 {
+		t.Fatalf("expected 3 tasks, got %d", len(tasks))
+	}
+	want := []string{"task-b", "task-c", "task-a"}
+	for i, w := range want {
+		if tasks[i].UUID != w {
+			t.Errorf("position %d: got %s, want %s", i, tasks[i].UUID, w)
+		}
+	}
+}
+
+func TestHandleFindTasksSortToday(t *testing.T) {
+	now := time.Now().UTC().Truncate(24 * time.Hour)
+	yesterday := now.Add(-24 * time.Hour)
+
+	fc := newFakeCloud("test@example.com",
+		// tir=now, ti=20
+		makeTaskItem("task-a", withTitle("Today A"),
+			withSchedule(thingscloud.TaskScheduleAnytime),
+			withScheduledDate(now),
+			withTodayIndex(20),
+			withTodayIndexRefDate(now),
+		),
+		// tir=now, ti=10 — should sort before task-a within same tir group
+		makeTaskItem("task-b", withTitle("Today B"),
+			withSchedule(thingscloud.TaskScheduleAnytime),
+			withScheduledDate(now),
+			withTodayIndex(10),
+			withTodayIndexRefDate(now),
+		),
+		// tir=yesterday, ti=5 — older tir sorts last
+		makeTaskItem("task-c", withTitle("Yesterday"),
+			withSchedule(thingscloud.TaskScheduleAnytime),
+			withScheduledDate(yesterday),
+			withTodayIndex(5),
+			withTodayIndexRefDate(yesterday),
+		),
+	)
+	defer fc.Close()
+	tmcp := newTestThingsMCP(t, fc)
+
+	req := makeReq(map[string]any{"schedule": "today"})
+	result, err := tmcp.handleFindTasks(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertNotError(t, result)
+
+	tasks := resultJSON[[]TaskOutput](t, result)
+	if len(tasks) != 3 {
+		t.Fatalf("expected 3 tasks, got %d", len(tasks))
+	}
+	// tir DESC: now first, yesterday last; within now: ti ASC (10 before 20)
+	want := []string{"task-b", "task-a", "task-c"}
+	for i, w := range want {
+		if tasks[i].UUID != w {
+			t.Errorf("position %d: got %s, want %s", i, tasks[i].UUID, w)
+		}
+	}
+}
+
+func TestHandleFindProjectsSortByIndex(t *testing.T) {
+	fc := newFakeCloud("test@example.com",
+		makeTaskItem("proj-a", withTitle("Third"), withTaskType(thingscloud.TaskTypeProject), withIndex(30)),
+		makeTaskItem("proj-b", withTitle("First"), withTaskType(thingscloud.TaskTypeProject), withIndex(10)),
+		makeTaskItem("proj-c", withTitle("Second"), withTaskType(thingscloud.TaskTypeProject), withIndex(20)),
+	)
+	defer fc.Close()
+	tmcp := newTestThingsMCP(t, fc)
+
+	req := makeReq(map[string]any{})
+	result, err := tmcp.handleFindProjects(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertNotError(t, result)
+
+	projects := resultJSON[[]TaskOutput](t, result)
+	if len(projects) != 3 {
+		t.Fatalf("expected 3 projects, got %d", len(projects))
+	}
+	want := []string{"proj-b", "proj-c", "proj-a"}
+	for i, w := range want {
+		if projects[i].UUID != w {
+			t.Errorf("position %d: got %s, want %s", i, projects[i].UUID, w)
+		}
+	}
+}
+
+func TestHandleShowProjectSortByIndex(t *testing.T) {
+	fc := newFakeCloud("test@example.com",
+		makeTaskItem("proj-1", withTitle("My Project"), withTaskType(thingscloud.TaskTypeProject)),
+		makeTaskItem("heading-b", withTitle("Second Heading"), withTaskType(thingscloud.TaskTypeHeading), withParent("proj-1"), withIndex(20)),
+		makeTaskItem("heading-a", withTitle("First Heading"), withTaskType(thingscloud.TaskTypeHeading), withParent("proj-1"), withIndex(10)),
+		// Unfiled tasks
+		makeTaskItem("task-u2", withTitle("Unfiled B"), withParent("proj-1"), withIndex(30)),
+		makeTaskItem("task-u1", withTitle("Unfiled A"), withParent("proj-1"), withIndex(10)),
+		// Tasks under heading-b
+		makeTaskItem("task-h1", withTitle("H task B"), withParent("proj-1"), withActionGroup("heading-b"), withIndex(25)),
+		makeTaskItem("task-h2", withTitle("H task A"), withParent("proj-1"), withActionGroup("heading-b"), withIndex(5)),
+	)
+	defer fc.Close()
+	tmcp := newTestThingsMCP(t, fc)
+
+	type HeadingWithTasks struct {
+		UUID  string       `json:"uuid"`
+		Title string       `json:"title"`
+		Tasks []TaskOutput `json:"tasks"`
+	}
+	type ProjectDetail struct {
+		TaskOutput
+		Headings     []HeadingWithTasks `json:"headings"`
+		UnfiledTasks []TaskOutput       `json:"unfiledTasks"`
+	}
+
+	req := makeReq(map[string]any{"uuid": "proj-1"})
+	result, err := tmcp.handleShowProject(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	assertNotError(t, result)
+
+	detail := resultJSON[ProjectDetail](t, result)
+
+	// Headings sorted by ix: heading-a (10) before heading-b (20)
+	if len(detail.Headings) != 2 {
+		t.Fatalf("expected 2 headings, got %d", len(detail.Headings))
+	}
+	if detail.Headings[0].UUID != "heading-a" {
+		t.Errorf("heading 0: got %s, want heading-a", detail.Headings[0].UUID)
+	}
+	if detail.Headings[1].UUID != "heading-b" {
+		t.Errorf("heading 1: got %s, want heading-b", detail.Headings[1].UUID)
+	}
+
+	// Unfiled tasks sorted by ix: task-u1 (10) before task-u2 (30)
+	if len(detail.UnfiledTasks) != 2 {
+		t.Fatalf("expected 2 unfiled tasks, got %d", len(detail.UnfiledTasks))
+	}
+	if detail.UnfiledTasks[0].UUID != "task-u1" {
+		t.Errorf("unfiled 0: got %s, want task-u1", detail.UnfiledTasks[0].UUID)
+	}
+	if detail.UnfiledTasks[1].UUID != "task-u2" {
+		t.Errorf("unfiled 1: got %s, want task-u2", detail.UnfiledTasks[1].UUID)
+	}
+
+	// Tasks within heading-b sorted by ix: task-h2 (5) before task-h1 (25)
+	if len(detail.Headings[1].Tasks) != 2 {
+		t.Fatalf("expected 2 tasks in heading-b, got %d", len(detail.Headings[1].Tasks))
+	}
+	if detail.Headings[1].Tasks[0].UUID != "task-h2" {
+		t.Errorf("heading-b task 0: got %s, want task-h2", detail.Headings[1].Tasks[0].UUID)
+	}
+	if detail.Headings[1].Tasks[1].UUID != "task-h1" {
+		t.Errorf("heading-b task 1: got %s, want task-h1", detail.Headings[1].Tasks[1].UUID)
+	}
+}

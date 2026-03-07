@@ -310,10 +310,86 @@ func offsetToTime(secs int) string {
 }
 
 // ---------------------------------------------------------------------------
+// Index helpers — find the minimum ix among siblings so new items sort to top
+// ---------------------------------------------------------------------------
+
+// minSiblingIndex returns the minimum Index among tasks in the same scope
+// (project + optional heading). Used when creating tasks.
+func (t *ThingsMCP) minSiblingIndex(projectUUID, headingUUID string) int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	minIx := 0
+	if t.state == nil {
+		return minIx
+	}
+	for _, task := range t.state.Tasks {
+		if task.Type != thingscloud.TaskTypeTask || task.InTrash || task.Status != 0 {
+			continue
+		}
+		if projectUUID != "" && !containsStr(task.ParentTaskIDs, projectUUID) {
+			continue
+		}
+		if headingUUID != "" {
+			if !containsStr(task.ActionGroupIDs, headingUUID) {
+				continue
+			}
+		}
+		if task.Index < minIx {
+			minIx = task.Index
+		}
+	}
+	return minIx
+}
+
+// minProjectIndex returns the minimum Index among projects in the given area.
+func (t *ThingsMCP) minProjectIndex(areaUUID string) int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	minIx := 0
+	if t.state == nil {
+		return minIx
+	}
+	for _, task := range t.state.Tasks {
+		if task.Type != thingscloud.TaskTypeProject || task.InTrash || task.Status != 0 {
+			continue
+		}
+		if areaUUID != "" && !containsStr(task.AreaIDs, areaUUID) {
+			continue
+		}
+		if task.Index < minIx {
+			minIx = task.Index
+		}
+	}
+	return minIx
+}
+
+// minHeadingIndex returns the minimum Index among headings in the given project.
+func (t *ThingsMCP) minHeadingIndex(projectUUID string) int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	minIx := 0
+	if t.state == nil {
+		return minIx
+	}
+	for _, task := range t.state.Tasks {
+		if task.Type != thingscloud.TaskTypeHeading || task.InTrash {
+			continue
+		}
+		if !containsStr(task.ParentTaskIDs, projectUUID) {
+			continue
+		}
+		if task.Index < minIx {
+			minIx = task.Index
+		}
+	}
+	return minIx
+}
+
+// ---------------------------------------------------------------------------
 // Payload builders
 // ---------------------------------------------------------------------------
 
-func newTaskCreatePayload(title string, opts map[string]string) TaskCreatePayload {
+func newTaskCreatePayload(title string, opts map[string]string, ix int) TaskCreatePayload {
 	now := nowTs()
 	var st int
 	var sr *int64
@@ -433,7 +509,7 @@ func newTaskCreatePayload(title string, opts map[string]string) TaskCreatePayloa
 		Tp: tp, Sr: sr, Dds: nil, Rt: []string{}, Rmd: rmd,
 		Ss: 0, Tr: false, Dl: []string{}, Icp: false, St: st,
 		Ar: ar, Tt: title, Do: 0, Lai: nil, Tir: tir,
-		Tg: tg, Agr: agr, Ix: 0, Cd: now, Lt: false,
+		Tg: tg, Agr: agr, Ix: ix, Cd: now, Lt: false,
 		Icc: 0, Md: nil, Ti: 0, Dd: dd, Ato: ato,
 		Nt: nt, Icsd: icsd, Pr: pr, Rp: nil, Acrd: nil,
 		Sp: nil, Sb: sb, Rr: rr, Xx: defaultExtension(),
@@ -1965,7 +2041,7 @@ func (t *ThingsMCP) handleFindTasks(_ context.Context, req mcp.CallToolRequest) 
 		}
 	}
 
-	var tasks []TaskOutput
+	var filtered []*thingscloud.Task
 	for _, task := range state.Tasks {
 		// Skip headings and projects
 		if task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
@@ -2054,10 +2130,36 @@ func (t *ThingsMCP) handleFindTasks(_ context.Context, req mcp.CallToolRequest) 
 			continue
 		}
 
-		tasks = append(tasks, t.taskToOutput(task))
+		filtered = append(filtered, task)
 	}
 
-	if tasks == nil {
+	// Sort: today/tonight by tir DESC + ti ASC; all others by ix ASC
+	if schedule == "today" || schedule == "tonight" {
+		sort.Slice(filtered, func(i, j int) bool {
+			ti, tj := filtered[i].TodayIndexRefDate, filtered[j].TodayIndexRefDate
+			switch {
+			case ti == nil && tj == nil:
+				return filtered[i].TodayIndex < filtered[j].TodayIndex
+			case ti == nil:
+				return false
+			case tj == nil:
+				return true
+			case !ti.Equal(*tj):
+				return ti.After(*tj)
+			default:
+				return filtered[i].TodayIndex < filtered[j].TodayIndex
+			}
+		})
+	} else {
+		sort.Slice(filtered, func(i, j int) bool {
+			return filtered[i].Index < filtered[j].Index
+		})
+	}
+	tasks := make([]TaskOutput, len(filtered))
+	for i, task := range filtered {
+		tasks[i] = t.taskToOutput(task)
+	}
+	if len(tasks) == 0 {
 		tasks = []TaskOutput{}
 	}
 	return jsonResult(tasks), nil
@@ -2127,19 +2229,27 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 		UnfiledTasks []TaskOutput       `json:"unfiledTasks"`
 	}
 
-	// Collect headings in this project
+	// Collect headings in this project, sorted by ix
 	headingMap := make(map[string]*HeadingWithTasks)
-	var headingOrder []string
+	var headingRaw []*thingscloud.Task
 	for _, task := range state.Tasks {
 		if task.Type == thingscloud.TaskTypeHeading && !task.InTrash && containsStr(task.ParentTaskIDs, projectUUID) {
 			h := &HeadingWithTasks{UUID: task.UUID, Title: task.Title, Tasks: []TaskOutput{}}
 			headingMap[task.UUID] = h
-			headingOrder = append(headingOrder, task.UUID)
+			headingRaw = append(headingRaw, task)
 		}
+	}
+	sort.Slice(headingRaw, func(i, j int) bool {
+		return headingRaw[i].Index < headingRaw[j].Index
+	})
+	headingOrder := make([]string, len(headingRaw))
+	for i, ht := range headingRaw {
+		headingOrder[i] = ht.UUID
 	}
 
 	// Collect tasks in this project, group by heading
-	var unfiled []TaskOutput
+	var unfiledRaw []*thingscloud.Task
+	headingTasksRaw := make(map[string][]*thingscloud.Task)
 	for _, task := range state.Tasks {
 		if task.InTrash || task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
 			continue
@@ -2163,18 +2273,33 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 		}
 		placed := false
 		for _, hid := range task.ActionGroupIDs {
-			if h, ok := headingMap[hid]; ok {
-				h.Tasks = append(h.Tasks, t.taskToOutput(task))
+			if _, ok := headingMap[hid]; ok {
+				headingTasksRaw[hid] = append(headingTasksRaw[hid], task)
 				placed = true
 				break
 			}
 		}
 		if !placed {
-			unfiled = append(unfiled, t.taskToOutput(task))
+			unfiledRaw = append(unfiledRaw, task)
+		}
+	}
+	sort.Slice(unfiledRaw, func(i, j int) bool {
+		return unfiledRaw[i].Index < unfiledRaw[j].Index
+	})
+	unfiled := make([]TaskOutput, len(unfiledRaw))
+	for i, task := range unfiledRaw {
+		unfiled[i] = t.taskToOutput(task)
+	}
+	for hid, raw := range headingTasksRaw {
+		sort.Slice(raw, func(i, j int) bool {
+			return raw[i].Index < raw[j].Index
+		})
+		for _, task := range raw {
+			headingMap[hid].Tasks = append(headingMap[hid].Tasks, t.taskToOutput(task))
 		}
 	}
 
-	if unfiled == nil {
+	if len(unfiled) == 0 {
 		unfiled = []TaskOutput{}
 	}
 	var headings []HeadingWithTasks
@@ -2267,7 +2392,7 @@ func (t *ThingsMCP) handleFindProjects(_ context.Context, req mcp.CallToolReques
 		}
 	}
 
-	var projects []TaskOutput
+	var filtered []*thingscloud.Task
 	for _, task := range state.Tasks {
 		if task.Type != thingscloud.TaskTypeProject {
 			continue
@@ -2351,9 +2476,16 @@ func (t *ThingsMCP) handleFindProjects(_ context.Context, req mcp.CallToolReques
 			continue
 		}
 
-		projects = append(projects, t.taskToOutput(task))
+		filtered = append(filtered, task)
 	}
-	if projects == nil {
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].Index < filtered[j].Index
+	})
+	projects := make([]TaskOutput, len(filtered))
+	for i, task := range filtered {
+		projects[i] = t.taskToOutput(task)
+	}
+	if len(projects) == 0 {
 		projects = []TaskOutput{}
 	}
 	return jsonResult(projects), nil
@@ -2454,8 +2586,11 @@ func (t *ThingsMCP) handleCreateTask(_ context.Context, req mcp.CallToolRequest)
 		}
 	}
 
+	// Compute ix so the new task sorts to the top among siblings
+	ix := t.minSiblingIndex(opts["project_uuid"], opts["heading_uuid"]) - 1
+
 	taskUUID := generateUUID()
-	payload := newTaskCreatePayload(title, opts)
+	payload := newTaskCreatePayload(title, opts, ix)
 	env := writeEnvelope{id: taskUUID, action: 0, kind: "Task6", payload: payload}
 
 	var envelopes []thingscloud.Identifiable
@@ -2504,8 +2639,10 @@ func (t *ThingsMCP) handleCreateProject(_ context.Context, req mcp.CallToolReque
 		}
 	}
 
+	ix := t.minProjectIndex(opts["area_uuid"]) - 1
+
 	projectUUID := generateUUID()
-	payload := newTaskCreatePayload(title, opts)
+	payload := newTaskCreatePayload(title, opts, ix)
 	env := writeEnvelope{id: projectUUID, action: 0, kind: "Task6", payload: payload}
 
 	if err := t.writeAndSync(env); err != nil {
@@ -2530,8 +2667,10 @@ func (t *ThingsMCP) handleCreateHeading(_ context.Context, req mcp.CallToolReque
 		return errResult(err.Error()), nil
 	}
 
+	ix := t.minHeadingIndex(projectUUID) - 1
+
 	headingUUID := generateUUID()
-	payload := newTaskCreatePayload(title, opts)
+	payload := newTaskCreatePayload(title, opts, ix)
 	env := writeEnvelope{id: headingUUID, action: 0, kind: "Task6", payload: payload}
 
 	if err := t.writeAndSync(env); err != nil {
