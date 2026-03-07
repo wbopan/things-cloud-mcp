@@ -647,17 +647,25 @@ func isToday(t time.Time) bool {
 }
 
 // isScheduledForTodayOrPast returns true if the task should appear in
-// the Today filter: either scheduled for today or overdue (past date).
-func isScheduledForTodayOrPast(st thingscloud.TaskSchedule, scheduledDate *time.Time) bool {
-	if scheduledDate == nil {
+// the Today filter. Uses TodayIndexRefDate (tir) which correctly tracks
+// the current occurrence date for recurring tasks, falling back to
+// ScheduledDate (sr) for non-recurring tasks that lack tir.
+func isScheduledForTodayOrPast(task *thingscloud.Task) bool {
+	if task.Schedule != 1 && task.Schedule != 2 {
 		return false
 	}
-	if st != 1 && st != 2 {
+	// Prefer tir: it reflects the actual "in Today" date and is correct
+	// for recurring tasks (sr stays at the first occurrence date).
+	date := task.TodayIndexRefDate
+	if date == nil {
+		date = task.ScheduledDate
+	}
+	if date == nil {
 		return false
 	}
 	now := time.Now().UTC()
 	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
-	return !scheduledDate.After(todayEnd)
+	return !date.After(todayEnd)
 }
 
 func (t *ThingsMCP) taskToOutput(task *thingscloud.Task) TaskOutput {
@@ -2069,11 +2077,11 @@ func (t *ThingsMCP) handleFindTasks(_ context.Context, req mcp.CallToolRequest) 
 		// Schedule filter
 		if schedule != "" {
 			if schedule == "today" {
-				if !isScheduledForTodayOrPast(task.Schedule, task.ScheduledDate) {
+				if !isScheduledForTodayOrPast(task) {
 					continue
 				}
 			} else if schedule == "tonight" {
-				if !isScheduledForTodayOrPast(task.Schedule, task.ScheduledDate) || task.StartBucket != 1 {
+				if !isScheduledForTodayOrPast(task) || task.StartBucket != 1 {
 					continue
 				}
 			} else {
@@ -2418,11 +2426,11 @@ func (t *ThingsMCP) handleFindProjects(_ context.Context, req mcp.CallToolReques
 		// Schedule filter
 		if schedule != "" {
 			if schedule == "today" {
-				if !isScheduledForTodayOrPast(task.Schedule, task.ScheduledDate) {
+				if !isScheduledForTodayOrPast(task) {
 					continue
 				}
 			} else if schedule == "tonight" {
-				if !isScheduledForTodayOrPast(task.Schedule, task.ScheduledDate) || task.StartBucket != 1 {
+				if !isScheduledForTodayOrPast(task) || task.StartBucket != 1 {
 					continue
 				}
 			} else {
