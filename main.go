@@ -367,6 +367,21 @@ func sortByIndex(tasks []*thingscloud.Task) {
 	sort.Slice(tasks, func(i, j int) bool { return tasks[i].Index < tasks[j].Index })
 }
 
+// effectiveUpcomingDate returns the earliest of ScheduledDate and DeadlineDate.
+// Used to sort upcoming tasks by their nearest relevant date.
+func effectiveUpcomingDate(task *thingscloud.Task) time.Time {
+	var best time.Time
+	if task.ScheduledDate != nil {
+		best = *task.ScheduledDate
+	}
+	if task.DeadlineDate != nil {
+		if best.IsZero() || task.DeadlineDate.Before(best) {
+			best = *task.DeadlineDate
+		}
+	}
+	return best
+}
+
 // ---------------------------------------------------------------------------
 // Payload builders
 // ---------------------------------------------------------------------------
@@ -2660,38 +2675,51 @@ func (t *ThingsMCP) handleOverview(_ context.Context, req mcp.CallToolRequest) (
 		Projects []TaskOutput `json:"projects"`
 	}
 	areaMap := make(map[string]*AreaOut)
+	areaProjects := make(map[string][]*thingscloud.Task) // area UUID → project tasks
 	var areaOrder []string
 	for _, area := range state.Areas {
 		areaMap[area.UUID] = &AreaOut{UUID: area.UUID, Title: area.Title, Projects: []TaskOutput{}}
 		areaOrder = append(areaOrder, area.UUID)
 	}
-	sort.Strings(areaOrder) // stable iteration
-	noArea := &AreaOut{UUID: "", Title: "(No Area)", Projects: []TaskOutput{}}
+	sort.Slice(areaOrder, func(i, j int) bool {
+		return areaMap[areaOrder[i]].Title < areaMap[areaOrder[j]].Title
+	})
+	var noAreaProjects []*thingscloud.Task
 
 	for _, task := range state.Tasks {
 		if task.Type != thingscloud.TaskTypeProject || task.Status != 0 || task.InTrash {
 			continue
 		}
-		out := t.taskToOutput(task)
 		placed := false
 		for _, aid := range task.AreaIDs {
-			if a, ok := areaMap[aid]; ok {
-				a.Projects = append(a.Projects, out)
+			if _, ok := areaMap[aid]; ok {
+				areaProjects[aid] = append(areaProjects[aid], task)
 				placed = true
 				break
 			}
 		}
 		if !placed {
-			noArea.Projects = append(noArea.Projects, out)
+			noAreaProjects = append(noAreaProjects, task)
 		}
 	}
 
 	var areas []AreaOut
 	for _, id := range areaOrder {
-		areas = append(areas, *areaMap[id])
+		a := areaMap[id]
+		projs := areaProjects[id]
+		sortByIndex(projs)
+		for _, p := range projs {
+			a.Projects = append(a.Projects, t.taskToOutput(p))
+		}
+		areas = append(areas, *a)
 	}
-	if len(noArea.Projects) > 0 {
-		areas = append(areas, *noArea)
+	if len(noAreaProjects) > 0 {
+		sortByIndex(noAreaProjects)
+		noArea := AreaOut{UUID: "", Title: "(No Area)", Projects: make([]TaskOutput, 0, len(noAreaProjects))}
+		for _, p := range noAreaProjects {
+			noArea.Projects = append(noArea.Projects, t.taskToOutput(p))
+		}
+		areas = append(areas, noArea)
 	}
 	if areas == nil {
 		areas = []AreaOut{}
@@ -2699,7 +2727,7 @@ func (t *ThingsMCP) handleOverview(_ context.Context, req mcp.CallToolRequest) (
 
 	// --- Today tasks ---
 	todaySet := make(map[string]bool)
-	var todayTasks []TaskOutput
+	var todayRaw []*thingscloud.Task
 	now := time.Now().UTC()
 	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
 	cutoff := todayEnd.AddDate(0, 0, lookahead)
@@ -2712,16 +2740,18 @@ func (t *ThingsMCP) handleOverview(_ context.Context, req mcp.CallToolRequest) (
 			continue
 		}
 		if isScheduledForTodayOrPast(task) {
-			todayTasks = append(todayTasks, t.taskToOutput(task))
+			todayRaw = append(todayRaw, task)
 			todaySet[task.UUID] = true
 		}
 	}
-	if todayTasks == nil {
-		todayTasks = []TaskOutput{}
+	sortByIndex(todayRaw)
+	todayTasks := make([]TaskOutput, 0, len(todayRaw))
+	for _, task := range todayRaw {
+		todayTasks = append(todayTasks, t.taskToOutput(task))
 	}
 
 	// --- Upcoming tasks ---
-	var upcomingTasks []TaskOutput
+	var upcomingRaw []*thingscloud.Task
 	for _, task := range state.Tasks {
 		if task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
 			continue
@@ -2740,19 +2770,25 @@ func (t *ThingsMCP) handleOverview(_ context.Context, req mcp.CallToolRequest) (
 			inWindow = true
 		}
 		if inWindow {
-			upcomingTasks = append(upcomingTasks, t.taskToOutput(task))
+			upcomingRaw = append(upcomingRaw, task)
 		}
 	}
-	if upcomingTasks == nil {
-		upcomingTasks = []TaskOutput{}
+	sort.Slice(upcomingRaw, func(i, j int) bool {
+		ei := effectiveUpcomingDate(upcomingRaw[i])
+		ej := effectiveUpcomingDate(upcomingRaw[j])
+		return ei.Before(ej)
+	})
+	upcomingTasks := make([]TaskOutput, 0, len(upcomingRaw))
+	for _, task := range upcomingRaw {
+		upcomingTasks = append(upcomingTasks, t.taskToOutput(task))
 	}
 
 	// --- Assemble ---
 	result := struct {
 		Tags          []TagOut     `json:"tags"`
 		Areas         []AreaOut    `json:"areas"`
-		TodayTasks    []TaskOutput `json:"today_tasks"`
-		UpcomingTasks []TaskOutput `json:"upcoming_tasks"`
+		TodayTasks    []TaskOutput `json:"todayTasks"`
+		UpcomingTasks []TaskOutput `json:"upcomingTasks"`
 	}{tags, areas, todayTasks, upcomingTasks}
 
 	return jsonResult(result), nil
