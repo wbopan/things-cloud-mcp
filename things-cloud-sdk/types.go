@@ -204,6 +204,7 @@ type Task struct {
 	TagIDs          []string
 	RecurrenceIDs   []string
 	DelegateIDs     []string
+	Repeater        *RepeaterConfiguration
 }
 
 // TaskActionItemPayload describes the payload for modifying Tasks, and also Projects,

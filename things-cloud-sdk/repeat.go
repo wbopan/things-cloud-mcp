@@ -300,6 +300,57 @@ func (c RepeaterConfiguration) nextDailyScheduledAt(repeat int) time.Time {
 	return nt
 }
 
+// NextOccurrenceAfter returns the next occurrence date strictly after current.
+// This is used when completing a recurring task to advance tir to the next date.
+func (c RepeaterConfiguration) NextOccurrenceAfter(current time.Time) time.Time {
+	current = time.Date(current.Year(), current.Month(), current.Day(), 0, 0, 0, 0, time.UTC)
+
+	switch c.FrequencyUnit {
+	case FrequencyUnitDaily:
+		return current.AddDate(0, 0, int(c.FrequencyAmplitude))
+
+	case FrequencyUnitWeekly:
+		if len(c.DetailConfiguration) <= 1 {
+			return current.AddDate(0, 0, int(c.FrequencyAmplitude)*7)
+		}
+		// Multiple weekdays: find the next weekday in the cycle
+		currentWD := current.Weekday()
+		// Collect and sort weekdays
+		type wdEntry struct {
+			wd   time.Weekday
+			orig int
+		}
+		var wds []wdEntry
+		for i, dc := range c.DetailConfiguration {
+			if dc.Weekday != nil {
+				wds = append(wds, wdEntry{*dc.Weekday, i})
+			}
+		}
+		// Sort by weekday value
+		for i := 1; i < len(wds); i++ {
+			for j := i; j > 0 && wds[j].wd < wds[j-1].wd; j-- {
+				wds[j], wds[j-1] = wds[j-1], wds[j]
+			}
+		}
+		// Find next weekday after current
+		for _, w := range wds {
+			if w.wd > currentWD {
+				return current.AddDate(0, 0, int(w.wd-currentWD))
+			}
+		}
+		// Wrap to first weekday of next cycle
+		daysToFirst := 7*int(c.FrequencyAmplitude) - int(currentWD) + int(wds[0].wd)
+		return current.AddDate(0, 0, daysToFirst)
+
+	case FrequencyUnitMonthly:
+		return current.AddDate(0, int(c.FrequencyAmplitude), 0)
+
+	case FrequencyUnitYearly:
+		return current.AddDate(int(c.FrequencyAmplitude), 0, 0)
+	}
+	return time.Time{}
+}
+
 // NextScheduledAt returns the next Nth date a rule should occur.
 // Note that things generates these ToDos as necessary.
 func (c RepeaterConfiguration) NextScheduledAt(repeat int) time.Time {

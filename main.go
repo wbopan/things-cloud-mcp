@@ -1061,6 +1061,16 @@ func containsStr(slice []string, s string) bool {
 	return false
 }
 
+func (t *ThingsMCP) findTask(uuid string) *thingscloud.Task {
+	state := t.getState()
+	for _, task := range state.Tasks {
+		if task.UUID == uuid {
+			return task
+		}
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // UUID validation
 // ---------------------------------------------------------------------------
@@ -2211,7 +2221,6 @@ func taskToRawWire(task *thingscloud.Task) map[string]any {
 	} else {
 		raw["ato"] = nil
 	}
-
 	return raw
 }
 
@@ -3111,7 +3120,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 		// --- Read tools ---
 		{
 			Tool: mcp.NewTool("things_find_tasks",
-				mcp.WithDescription("List tasks from Things 3 with optional filters. Returns an array of task objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/tonight/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, reminderTime, recurrence, areas, project, tags. Default: only pending (active) tasks. Use status parameter to query completed or canceled tasks. Note: schedule=today includes both regular and tonight tasks; use schedule=tonight to filter only tonight tasks."),
+				mcp.WithDescription("List tasks from Things 3 with optional filters. Returns an array of task objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/tonight/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, reminderTime, recurrence, areas, project, tags. Use things_show_task to see full details including checklist items. Default: only pending (active) tasks. Use status parameter to query completed or canceled tasks. Note: schedule=today includes both regular and tonight tasks; use schedule=tonight to filter only tonight tasks."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
@@ -3136,7 +3145,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 		},
 		{
 			Tool: mcp.NewTool("things_show_task",
-				mcp.WithDescription("Show full details of a single Things 3 task, including its checklist items. Returns a task object with uuid, title, status, schedule, note, dates, areas, project, tags, and a checklist array (each with uuid, title, status). Accepts a UUID prefix for convenience."),
+				mcp.WithDescription("Show full details of a single Things 3 task, including its checklist items. Returns a task object with uuid, title, status, schedule, note, dates, areas, project, tags, and a checklist array (each with uuid, title, status). Accepts a UUID prefix for convenience. Use things_find_tasks to search for tasks and obtain UUIDs."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
@@ -3149,7 +3158,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 		},
 		{
 			Tool: mcp.NewTool("things_show_project",
-				mcp.WithDescription("Show full details of a Things 3 project, including its headings and tasks grouped by heading. Returns the project info plus a headings array (each with uuid, title, and nested tasks) and an unfiledTasks array for tasks not under any heading."),
+				mcp.WithDescription("Show full details of a Things 3 project, including its headings and tasks grouped by heading. Returns the project info plus a headings array (each with uuid, title, and nested tasks) and an unfiledTasks array for tasks not under any heading. Use things_find_projects to search for projects and obtain UUIDs."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
@@ -3163,7 +3172,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 		},
 		{
 			Tool: mcp.NewTool("things_find_projects",
-				mcp.WithDescription("List projects from Things 3 with optional filters. Returns an array of project objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/tonight/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, areas, tags. Default: only pending (active) projects. Use status parameter to query completed or canceled projects."),
+				mcp.WithDescription("List projects from Things 3 with optional filters. Returns an array of project objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/tonight/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, areas, tags. Use things_show_project to see full details including headings and child tasks. Default: only pending (active) projects. Use status parameter to query completed or canceled projects."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
@@ -3187,7 +3196,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 		},
 		{
 			Tool: mcp.NewTool("things_find_headings",
-				mcp.WithDescription("List all headings within a Things 3 project. Returns an array of heading objects, each containing uuid and title. Use things_show_project to also see the tasks grouped under each heading."),
+				mcp.WithDescription("List all headings within a Things 3 project. Returns an array of heading objects, each containing uuid and title. Use things_show_project to also see the tasks grouped under each heading. Use things_find_projects to find the project UUID."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),

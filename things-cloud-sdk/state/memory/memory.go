@@ -124,6 +124,9 @@ func (s *State) updateTask(item things.TaskActionItem, rawP json.RawMessage) *th
 	if item.P.TaskIR != nil {
 		t.TodayIndexRefDate = item.P.TaskIR.Time()
 	}
+	if item.P.Repeater != nil {
+		t.Repeater = item.P.Repeater
+	}
 
 	// Handle explicit null clears: parse raw JSON to find keys set to null.
 	// Go's JSON decoder sets *Timestamp to nil for both "absent" and "null",
@@ -149,6 +152,8 @@ func (s *State) updateTask(item things.TaskActionItem, rawP json.RawMessage) *th
 					t.Note = ""
 				case "tg":
 					t.TagIDs = nil
+				case "rr":
+					t.Repeater = nil
 				}
 			}
 		}

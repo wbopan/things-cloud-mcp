@@ -378,6 +378,7 @@ func applyTaskPayload(old *things.Task, uuid string, p things.TaskActionItemPayl
 		t.TagIDs = old.TagIDs
 		t.RecurrenceIDs = old.RecurrenceIDs
 		t.DelegateIDs = old.DelegateIDs
+		t.Repeater = old.Repeater
 	}
 
 	// Apply each non-nil field from payload
@@ -444,6 +445,9 @@ func applyTaskPayload(old *things.Task, uuid string, p things.TaskActionItemPayl
 	}
 	if p.DelegateIDs != nil {
 		t.DelegateIDs = *p.DelegateIDs
+	}
+	if p.Repeater != nil {
+		t.Repeater = p.Repeater
 	}
 
 	// Handle Note specially: can be string or Note struct with patches

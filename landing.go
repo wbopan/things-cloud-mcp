@@ -821,7 +821,7 @@ var DocsPageHTML = `<!DOCTYPE html>
 <!-- Docs Hero -->
 <div class="docs-hero">
   <h2>Documentation</h2>
-  <p>Complete reference for all 21 tools available through the Things Cloud MCP server.</p>
+  <p>Complete reference for all 22 tools available through the Things Cloud MCP server.</p>
 </div>
 
 <!-- Read Tools -->
@@ -867,7 +867,7 @@ var DocsPageHTML = `<!DOCTYPE html>
     <div class="tool-entry-desc">Show project with headings and grouped tasks</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
-      <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Project UUID or prefix</td></tr>
+      <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Project UUID</td></tr>
       <tr><td><span class="param-name">status</span></td><td class="param-type">enum</td><td>Filter child tasks: pending (default), completed, canceled</td></tr>
     </table>
   </div>
@@ -967,6 +967,8 @@ var DocsPageHTML = `<!DOCTYPE html>
       <tr><td><span class="param-name">deadline</span></td><td class="param-type">string</td><td>YYYY-MM-DD</td></tr>
       <tr><td><span class="param-name">area_uuid</span></td><td class="param-type">string</td><td>Assign to area</td></tr>
       <tr><td><span class="param-name">tags</span></td><td class="param-type">string</td><td>Comma-separated tag UUIDs</td></tr>
+      <tr><td><span class="param-name">reminder_date</span></td><td class="param-type">string</td><td>YYYY-MM-DD (use with reminder_time)</td></tr>
+      <tr><td><span class="param-name">reminder_time</span></td><td class="param-type">string</td><td>HH:MM 24h (use with reminder_date)</td></tr>
       <tr><td><span class="param-name">recurrence</span></td><td class="param-type">string</td><td>daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days/weeks</td></tr>
     </table>
   </div>
@@ -1024,8 +1026,10 @@ var DocsPageHTML = `<!DOCTYPE html>
       <tr><td><span class="param-name">project_uuid</span></td><td class="param-type">string</td><td>Move to project</td></tr>
       <tr><td><span class="param-name">heading_uuid</span></td><td class="param-type">string</td><td>Move to heading</td></tr>
       <tr><td><span class="param-name">tags</span></td><td class="param-type">string</td><td>Comma-separated tag UUIDs</td></tr>
+      <tr><td><span class="param-name">reminder_date</span></td><td class="param-type">string</td><td>YYYY-MM-DD, or "none" to clear (use with reminder_time)</td></tr>
+      <tr><td><span class="param-name">reminder_time</span></td><td class="param-type">string</td><td>HH:MM 24h (use with reminder_date)</td></tr>
       <tr><td><span class="param-name">recurrence</span></td><td class="param-type">string</td><td>daily, weekly, monthly, yearly, etc. Use "none" to clear.</td></tr>
-      <tr><td><span class="param-name">status</span></td><td class="param-type">enum</td><td>pending, completed, canceled</td></tr>
+      <tr><td><span class="param-name">status</span></td><td class="param-type">enum</td><td>pending, completed, canceled, trashed, restored</td></tr>
     </table>
   </div>
 
