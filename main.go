@@ -313,9 +313,8 @@ func offsetToTime(secs int) string {
 // Index helpers — find the minimum ix among siblings so new items sort to top
 // ---------------------------------------------------------------------------
 
-// minSiblingIndex returns the minimum Index among tasks in the same scope
-// (project + optional heading). Used when creating tasks.
-func (t *ThingsMCP) minSiblingIndex(projectUUID, headingUUID string) int {
+// minIndexWhere returns the minimum Index among tasks matching the predicate.
+func (t *ThingsMCP) minIndexWhere(match func(*thingscloud.Task) bool) int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	minIx := 0
@@ -323,66 +322,49 @@ func (t *ThingsMCP) minSiblingIndex(projectUUID, headingUUID string) int {
 		return minIx
 	}
 	for _, task := range t.state.Tasks {
+		if match(task) && task.Index < minIx {
+			minIx = task.Index
+		}
+	}
+	return minIx
+}
+
+func (t *ThingsMCP) minSiblingIndex(projectUUID, headingUUID string) int {
+	return t.minIndexWhere(func(task *thingscloud.Task) bool {
 		if task.Type != thingscloud.TaskTypeTask || task.InTrash || task.Status != 0 {
-			continue
+			return false
 		}
 		if projectUUID != "" && !containsStr(task.ParentTaskIDs, projectUUID) {
-			continue
+			return false
 		}
-		if headingUUID != "" {
-			if !containsStr(task.ActionGroupIDs, headingUUID) {
-				continue
-			}
+		if headingUUID != "" && !containsStr(task.ActionGroupIDs, headingUUID) {
+			return false
 		}
-		if task.Index < minIx {
-			minIx = task.Index
-		}
-	}
-	return minIx
+		return true
+	})
 }
 
-// minProjectIndex returns the minimum Index among projects in the given area.
 func (t *ThingsMCP) minProjectIndex(areaUUID string) int {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	minIx := 0
-	if t.state == nil {
-		return minIx
-	}
-	for _, task := range t.state.Tasks {
+	return t.minIndexWhere(func(task *thingscloud.Task) bool {
 		if task.Type != thingscloud.TaskTypeProject || task.InTrash || task.Status != 0 {
-			continue
+			return false
 		}
 		if areaUUID != "" && !containsStr(task.AreaIDs, areaUUID) {
-			continue
+			return false
 		}
-		if task.Index < minIx {
-			minIx = task.Index
-		}
-	}
-	return minIx
+		return true
+	})
 }
 
-// minHeadingIndex returns the minimum Index among headings in the given project.
 func (t *ThingsMCP) minHeadingIndex(projectUUID string) int {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	minIx := 0
-	if t.state == nil {
-		return minIx
-	}
-	for _, task := range t.state.Tasks {
-		if task.Type != thingscloud.TaskTypeHeading || task.InTrash {
-			continue
-		}
-		if !containsStr(task.ParentTaskIDs, projectUUID) {
-			continue
-		}
-		if task.Index < minIx {
-			minIx = task.Index
-		}
-	}
-	return minIx
+	return t.minIndexWhere(func(task *thingscloud.Task) bool {
+		return task.Type == thingscloud.TaskTypeHeading && !task.InTrash && task.Status == 0 &&
+			containsStr(task.ParentTaskIDs, projectUUID)
+	})
+}
+
+func sortByIndex(tasks []*thingscloud.Task) {
+	sort.Slice(tasks, func(i, j int) bool { return tasks[i].Index < tasks[j].Index })
 }
 
 // ---------------------------------------------------------------------------
@@ -2164,9 +2146,7 @@ func (t *ThingsMCP) handleFindTasks(_ context.Context, req mcp.CallToolRequest) 
 			}
 		})
 	} else {
-		sort.Slice(filtered, func(i, j int) bool {
-			return filtered[i].Index < filtered[j].Index
-		})
+		sortByIndex(filtered)
 	}
 	tasks := make([]TaskOutput, len(filtered))
 	for i, task := range filtered {
@@ -2252,9 +2232,7 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 			headingRaw = append(headingRaw, task)
 		}
 	}
-	sort.Slice(headingRaw, func(i, j int) bool {
-		return headingRaw[i].Index < headingRaw[j].Index
-	})
+	sortByIndex(headingRaw)
 	headingOrder := make([]string, len(headingRaw))
 	for i, ht := range headingRaw {
 		headingOrder[i] = ht.UUID
@@ -2296,17 +2274,13 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 			unfiledRaw = append(unfiledRaw, task)
 		}
 	}
-	sort.Slice(unfiledRaw, func(i, j int) bool {
-		return unfiledRaw[i].Index < unfiledRaw[j].Index
-	})
+	sortByIndex(unfiledRaw)
 	unfiled := make([]TaskOutput, len(unfiledRaw))
 	for i, task := range unfiledRaw {
 		unfiled[i] = t.taskToOutput(task)
 	}
 	for hid, raw := range headingTasksRaw {
-		sort.Slice(raw, func(i, j int) bool {
-			return raw[i].Index < raw[j].Index
-		})
+		sortByIndex(raw)
 		for _, task := range raw {
 			headingMap[hid].Tasks = append(headingMap[hid].Tasks, t.taskToOutput(task))
 		}
@@ -2491,9 +2465,7 @@ func (t *ThingsMCP) handleFindProjects(_ context.Context, req mcp.CallToolReques
 
 		filtered = append(filtered, task)
 	}
-	sort.Slice(filtered, func(i, j int) bool {
-		return filtered[i].Index < filtered[j].Index
-	})
+	sortByIndex(filtered)
 	projects := make([]TaskOutput, len(filtered))
 	for i, task := range filtered {
 		projects[i] = t.taskToOutput(task)
