@@ -2622,6 +2622,142 @@ func (t *ThingsMCP) handleFindTags(_ context.Context, _ mcp.CallToolRequest) (*m
 	return jsonResult(tags), nil
 }
 
+func (t *ThingsMCP) handleOverview(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if err := t.syncAndRebuild(); err != nil {
+		return errResult(fmt.Sprintf("sync: %v", err)), nil
+	}
+	state := t.getState()
+
+	lookahead := req.GetInt("lookahead_days", 7)
+	if lookahead <= 0 {
+		lookahead = 7
+	}
+
+	// --- Tags ---
+	type TagOut struct {
+		UUID      string   `json:"uuid"`
+		Title     string   `json:"title"`
+		Shorthand string   `json:"shorthand,omitempty"`
+		ParentIDs []string `json:"parentIds,omitempty"`
+	}
+	var tags []TagOut
+	for _, tag := range state.Tags {
+		tags = append(tags, TagOut{
+			UUID:      tag.UUID,
+			Title:     tag.Title,
+			Shorthand: tag.ShortHand,
+			ParentIDs: tag.ParentTagIDs,
+		})
+	}
+	if tags == nil {
+		tags = []TagOut{}
+	}
+
+	// --- Area → Project tree ---
+	type AreaOut struct {
+		UUID     string       `json:"uuid"`
+		Title    string       `json:"title"`
+		Projects []TaskOutput `json:"projects"`
+	}
+	areaMap := make(map[string]*AreaOut)
+	var areaOrder []string
+	for _, area := range state.Areas {
+		areaMap[area.UUID] = &AreaOut{UUID: area.UUID, Title: area.Title, Projects: []TaskOutput{}}
+		areaOrder = append(areaOrder, area.UUID)
+	}
+	sort.Strings(areaOrder) // stable iteration
+	noArea := &AreaOut{UUID: "", Title: "(No Area)", Projects: []TaskOutput{}}
+
+	for _, task := range state.Tasks {
+		if task.Type != thingscloud.TaskTypeProject || task.Status != 0 || task.InTrash {
+			continue
+		}
+		out := t.taskToOutput(task)
+		placed := false
+		for _, aid := range task.AreaIDs {
+			if a, ok := areaMap[aid]; ok {
+				a.Projects = append(a.Projects, out)
+				placed = true
+				break
+			}
+		}
+		if !placed {
+			noArea.Projects = append(noArea.Projects, out)
+		}
+	}
+
+	var areas []AreaOut
+	for _, id := range areaOrder {
+		areas = append(areas, *areaMap[id])
+	}
+	if len(noArea.Projects) > 0 {
+		areas = append(areas, *noArea)
+	}
+	if areas == nil {
+		areas = []AreaOut{}
+	}
+
+	// --- Today tasks ---
+	todaySet := make(map[string]bool)
+	var todayTasks []TaskOutput
+	now := time.Now().UTC()
+	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
+	cutoff := todayEnd.AddDate(0, 0, lookahead)
+
+	for _, task := range state.Tasks {
+		if task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
+			continue
+		}
+		if task.Status != 0 || task.InTrash {
+			continue
+		}
+		if isScheduledForTodayOrPast(task) {
+			todayTasks = append(todayTasks, t.taskToOutput(task))
+			todaySet[task.UUID] = true
+		}
+	}
+	if todayTasks == nil {
+		todayTasks = []TaskOutput{}
+	}
+
+	// --- Upcoming tasks ---
+	var upcomingTasks []TaskOutput
+	for _, task := range state.Tasks {
+		if task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
+			continue
+		}
+		if task.Status != 0 || task.InTrash {
+			continue
+		}
+		if todaySet[task.UUID] {
+			continue
+		}
+		inWindow := false
+		if task.ScheduledDate != nil && task.ScheduledDate.After(todayEnd) && !task.ScheduledDate.After(cutoff) {
+			inWindow = true
+		}
+		if task.DeadlineDate != nil && task.DeadlineDate.After(todayEnd) && !task.DeadlineDate.After(cutoff) {
+			inWindow = true
+		}
+		if inWindow {
+			upcomingTasks = append(upcomingTasks, t.taskToOutput(task))
+		}
+	}
+	if upcomingTasks == nil {
+		upcomingTasks = []TaskOutput{}
+	}
+
+	// --- Assemble ---
+	result := struct {
+		Tags          []TagOut     `json:"tags"`
+		Areas         []AreaOut    `json:"areas"`
+		TodayTasks    []TaskOutput `json:"today_tasks"`
+		UpcomingTasks []TaskOutput `json:"upcoming_tasks"`
+	}{tags, areas, todayTasks, upcomingTasks}
+
+	return jsonResult(result), nil
+}
+
 func (t *ThingsMCP) handleCreateTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	title, err := req.RequireString("title")
 	if err != nil {
