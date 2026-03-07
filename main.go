@@ -2158,6 +2158,81 @@ func (t *ThingsMCP) handleFindTasks(_ context.Context, req mcp.CallToolRequest) 
 	return jsonResult(tasks), nil
 }
 
+func taskToRawWire(task *thingscloud.Task) map[string]any {
+	raw := map[string]any{
+		"uuid": task.UUID,
+		"tt":   task.Title,
+		"tp":   task.Type,
+		"ss":   task.Status,
+		"st":   task.Schedule,
+		"ix":   task.Index,
+		"ti":   task.TodayIndex,
+		"do":   task.DueOrder,
+		"sb":   task.StartBucket,
+		"tr":   task.InTrash,
+		"ar":   task.AreaIDs,
+		"pr":   task.ParentTaskIDs,
+		"agr":  task.ActionGroupIDs,
+		"tg":   task.TagIDs,
+		"rt":   task.RecurrenceIDs,
+		"dl":   task.DelegateIDs,
+		"nt":   task.Note,
+	}
+
+	// Timestamps: use unix epoch float (matching wire format), null if nil
+	raw["cd"] = float64(task.CreationDate.Unix()) + float64(task.CreationDate.Nanosecond())/1e9
+	if task.ModificationDate != nil {
+		raw["md"] = float64(task.ModificationDate.Unix()) + float64(task.ModificationDate.Nanosecond())/1e9
+	} else {
+		raw["md"] = nil
+	}
+	if task.ScheduledDate != nil {
+		raw["sr"] = float64(task.ScheduledDate.Unix()) + float64(task.ScheduledDate.Nanosecond())/1e9
+	} else {
+		raw["sr"] = nil
+	}
+	if task.DeadlineDate != nil {
+		raw["dd"] = float64(task.DeadlineDate.Unix()) + float64(task.DeadlineDate.Nanosecond())/1e9
+	} else {
+		raw["dd"] = nil
+	}
+	if task.CompletionDate != nil {
+		raw["sp"] = float64(task.CompletionDate.Unix()) + float64(task.CompletionDate.Nanosecond())/1e9
+	} else {
+		raw["sp"] = nil
+	}
+	if task.TodayIndexRefDate != nil {
+		raw["tir"] = float64(task.TodayIndexRefDate.Unix()) + float64(task.TodayIndexRefDate.Nanosecond())/1e9
+	} else {
+		raw["tir"] = nil
+	}
+	if task.AlarmTimeOffset != nil {
+		raw["ato"] = *task.AlarmTimeOffset
+	} else {
+		raw["ato"] = nil
+	}
+
+	return raw
+}
+
+func (t *ThingsMCP) handleDebugRaw(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	uuidPrefix, err := req.RequireString("uuid")
+	if err != nil {
+		return errResult("uuid is required"), nil
+	}
+	if err := t.syncAndRebuild(); err != nil {
+		return errResult(fmt.Sprintf("sync: %v", err)), nil
+	}
+
+	state := t.getState()
+	for _, task := range state.Tasks {
+		if strings.HasPrefix(task.UUID, uuidPrefix) {
+			return jsonResult(taskToRawWire(task)), nil
+		}
+	}
+	return errResult(fmt.Sprintf("task not found: %s", uuidPrefix)), nil
+}
+
 func (t *ThingsMCP) handleShowTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	uuidPrefix, err := req.RequireString("uuid")
 	if err != nil {
@@ -3346,6 +3421,21 @@ func defineTools(um *UserManager) []server.ServerTool {
 			),
 			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 				return t.handleDeleteChecklistItem(ctx, req)
+			}),
+		},
+
+		// --- Debug tool ---
+		{
+			Tool: mcp.NewTool("things_debug_raw",
+				mcp.WithDescription("Show all raw wire-format fields of a task or project. Returns every field using Things Cloud's abbreviated keys (tt, tp, ss, st, sr, tir, dd, sp, cd, md, sb, ix, ti, do, tr, ar, pr, agr, tg, rt, dl, nt, ato). Useful for debugging sync issues or inspecting internal state. Accepts a UUID prefix."),
+				mcp.WithReadOnlyHintAnnotation(true),
+				mcp.WithDestructiveHintAnnotation(false),
+				mcp.WithIdempotentHintAnnotation(true),
+				mcp.WithOpenWorldHintAnnotation(false),
+				mcp.WithString("uuid", mcp.Required(), mcp.Description("Task or project UUID, or unique prefix")),
+			),
+			Handler: wrap(func(t *ThingsMCP, ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return t.handleDebugRaw(ctx, req)
 			}),
 		},
 

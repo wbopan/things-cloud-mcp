@@ -498,7 +498,7 @@ var LandingPageHTML = `<!DOCTYPE html>
       <span class="hero-feature-sep">/</span>
       <span class="hero-feature">OAuth 2.0</span>
       <span class="hero-feature-sep">/</span>
-      <span class="hero-feature">21 Tools</span>
+      <span class="hero-feature">22 Tools</span>
     </div>
   </div>
 </section>
@@ -829,7 +829,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   <div class="category-header">
     <span class="category-dot read"></span>
     <h3>Read</h3>
-    <span class="count">8 tools</span>
+    <span class="count">9 tools</span>
   </div>
 
   <div class="tool-entry">
@@ -911,6 +911,14 @@ var DocsPageHTML = `<!DOCTYPE html>
     <div class="tool-entry-name">things_find_tags</div>
     <div class="tool-entry-desc">List all tags</div>
     <div class="no-params">No parameters</div>
+  </div>
+
+  <div class="tool-entry">
+    <div class="tool-entry-name">things_debug_raw</div>
+    <div class="tool-entry-desc">Show all raw wire-format fields of a task or project</div>
+    <div class="params">
+      <span class="param"><span class="param-name">uuid</span> <span class="param-required">required</span></span>
+    </div>
   </div>
 
   <div class="tool-entry">
