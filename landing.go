@@ -498,7 +498,7 @@ var LandingPageHTML = `<!DOCTYPE html>
       <span class="hero-feature-sep">/</span>
       <span class="hero-feature">OAuth 2.0</span>
       <span class="hero-feature-sep">/</span>
-      <span class="hero-feature">22 Tools</span>
+      <span class="hero-feature">23 Tools</span>
     </div>
   </div>
 </section>
@@ -821,7 +821,7 @@ var DocsPageHTML = `<!DOCTYPE html>
 <!-- Docs Hero -->
 <div class="docs-hero">
   <h2>Documentation</h2>
-  <p>Complete reference for all 22 tools available through the Things Cloud MCP server.</p>
+  <p>Complete reference for all 23 tools available through the Things Cloud MCP server.</p>
 </div>
 
 <!-- Read Tools -->
@@ -829,7 +829,7 @@ var DocsPageHTML = `<!DOCTYPE html>
   <div class="category-header">
     <span class="category-dot read"></span>
     <h3>Read</h3>
-    <span class="count">9 tools</span>
+    <span class="count">10 tools</span>
   </div>
 
   <div class="tool-entry">
@@ -911,6 +911,15 @@ var DocsPageHTML = `<!DOCTYPE html>
     <div class="tool-entry-name">things_find_tags</div>
     <div class="tool-entry-desc">List all tags</div>
     <div class="no-params">No parameters</div>
+  </div>
+
+  <div class="tool-entry">
+    <div class="tool-entry-name">things_overview</div>
+    <div class="tool-entry-desc">Comprehensive snapshot: tags, area→project hierarchy, today's tasks, upcoming tasks</div>
+    <table class="params-table">
+      <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
+      <tr><td><span class="param-name">lookahead_days</span></td><td class="param-type">number</td><td>Days ahead to scan for upcoming tasks (default: 7)</td></tr>
+    </table>
   </div>
 
   <div class="tool-entry">
@@ -1014,7 +1023,7 @@ var DocsPageHTML = `<!DOCTYPE html>
 
   <div class="tool-entry">
     <div class="tool-entry-name">things_edit_item</div>
-    <div class="tool-entry-desc">Edit a task or project (only provided fields change)</div>
+    <div class="tool-entry-desc">Edit a task or project (only provided fields change). Completing a recurring task completes only the current instance.</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
       <tr><td><span class="param-name">uuid</span><span class="param-required">required</span></td><td class="param-type">string</td><td>Item UUID</td></tr>
