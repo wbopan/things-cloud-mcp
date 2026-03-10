@@ -3871,6 +3871,21 @@ func main() {
 	mux.HandleFunc("/how-it-works", handleHowItWorksPage)
 	mux.HandleFunc("/favicon.ico", handleFavicon)
 	mux.HandleFunc("/favicon.svg", handleFavicon)
+	mux.HandleFunc("/robots.txt", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Write([]byte("User-agent: *\nAllow: /\n\nSitemap: https://thingscloudmcp.com/sitemap.xml\n"))
+	})
+	mux.HandleFunc("/sitemap.xml", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://thingscloudmcp.com/</loc><priority>1.0</priority></url>
+  <url><loc>https://thingscloudmcp.com/docs</loc><priority>0.8</priority></url>
+  <url><loc>https://thingscloudmcp.com/how-it-works</loc><priority>0.8</priority></url>
+</urlset>`))
+	})
 	mux.HandleFunc("/d/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
