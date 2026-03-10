@@ -724,6 +724,26 @@ func (t *ThingsMCP) taskToOutput(task *thingscloud.Task) TaskOutput {
 		if parent, ok := state.Tasks[pid]; ok {
 			out.Project = &Ref{UUID: pid, Name: parent.Title}
 		}
+	} else if len(task.ActionGroupIDs) > 0 {
+		// Task is under a heading (agr) — heading's pr points to the project
+		if heading, ok := state.Tasks[task.ActionGroupIDs[0]]; ok {
+			if len(heading.ParentTaskIDs) > 0 {
+				pid := heading.ParentTaskIDs[0]
+				if proj, ok := state.Tasks[pid]; ok {
+					out.Project = &Ref{UUID: pid, Name: proj.Title}
+				}
+			}
+		}
+	}
+	// Inherit area from parent project when task has no direct area
+	if len(out.Areas) == 0 && out.Project != nil {
+		if proj, ok := state.Tasks[out.Project.UUID]; ok {
+			for _, areaID := range proj.AreaIDs {
+				if area, ok := state.Areas[areaID]; ok {
+					out.Areas = append(out.Areas, Ref{UUID: areaID, Name: area.Title})
+				}
+			}
+		}
 	}
 	for _, tagID := range task.TagIDs {
 		if tag, ok := state.Tags[tagID]; ok {
@@ -1076,6 +1096,45 @@ func (t *ThingsMCP) findTagUUID(name string) string {
 		}
 	}
 	return ""
+}
+
+// taskMatchesProject checks if a task belongs to a project, either directly
+// via ParentTaskIDs or indirectly via ActionGroupIDs → heading → ParentTaskIDs.
+func (t *ThingsMCP) taskMatchesProject(task *thingscloud.Task, projectUUID string) bool {
+	if containsStr(task.ParentTaskIDs, projectUUID) {
+		return true
+	}
+	if len(task.ActionGroupIDs) > 0 {
+		state := t.getState()
+		if heading, ok := state.Tasks[task.ActionGroupIDs[0]]; ok {
+			return containsStr(heading.ParentTaskIDs, projectUUID)
+		}
+	}
+	return false
+}
+
+// taskMatchesArea checks if a task belongs to an area, either directly
+// via AreaIDs or indirectly via its parent project's AreaIDs.
+func (t *ThingsMCP) taskMatchesArea(task *thingscloud.Task, areaUUID string) bool {
+	if containsStr(task.AreaIDs, areaUUID) {
+		return true
+	}
+	// Check parent project's area (direct parent or via heading)
+	state := t.getState()
+	var projectUUID string
+	if len(task.ParentTaskIDs) > 0 {
+		projectUUID = task.ParentTaskIDs[0]
+	} else if len(task.ActionGroupIDs) > 0 {
+		if heading, ok := state.Tasks[task.ActionGroupIDs[0]]; ok && len(heading.ParentTaskIDs) > 0 {
+			projectUUID = heading.ParentTaskIDs[0]
+		}
+	}
+	if projectUUID != "" {
+		if proj, ok := state.Tasks[projectUUID]; ok {
+			return containsStr(proj.AreaIDs, areaUUID)
+		}
+	}
+	return false
 }
 
 func containsStr(slice []string, s string) bool {
@@ -2152,10 +2211,10 @@ func (t *ThingsMCP) handleFindTasks(_ context.Context, req mcp.CallToolRequest) 
 			}
 		}
 		// Name-based filters
-		if areaUUID != "" && !containsStr(task.AreaIDs, areaUUID) {
+		if areaUUID != "" && !t.taskMatchesArea(task, areaUUID) {
 			continue
 		}
-		if projectUUID != "" && !containsStr(task.ParentTaskIDs, projectUUID) {
+		if projectUUID != "" && !t.taskMatchesProject(task, projectUUID) {
 			continue
 		}
 		if tagUUID != "" && !containsStr(task.TagIDs, tagUUID) {
@@ -2389,7 +2448,7 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 				continue
 			}
 		}
-		if !containsStr(task.ParentTaskIDs, projectUUID) {
+		if !t.taskMatchesProject(task, projectUUID) {
 			continue
 		}
 		placed := false
