@@ -19,6 +19,7 @@ func TestHandleListTasks(t *testing.T) {
 	project := makeTaskItem("proj-1",
 		withTitle("My Project"),
 		withTaskType(thingscloud.TaskTypeProject),
+		withArea("area-1"),
 	)
 
 	pendingTask := makeTaskItem("task-1",
@@ -40,6 +41,7 @@ func TestHandleListTasks(t *testing.T) {
 	heading := makeTaskItem("heading-1",
 		withTitle("Section A"),
 		withTaskType(thingscloud.TaskTypeHeading),
+		withParent("proj-1"),
 	)
 	todayTask := makeTaskItem("task-4",
 		withTitle("Today task"),
@@ -83,11 +85,17 @@ func TestHandleListTasks(t *testing.T) {
 		withDeadline(mustTime("2025-04-01")),
 		withCreationDate(mustTime("2025-03-15")),
 	)
+	headingTask := makeTaskItem("task-12",
+		withTitle("Heading child"),
+		withActionGroup("heading-1"),
+		withCreationDate(mustTime("2025-03-15")),
+	)
 
 	allItems := []thingscloud.Item{
 		area, tag, project, heading,
 		pendingTask, completedTask, trashedTask, todayTask, somedayTask,
 		taggedTask, areaTask, projectTask, notedTask, scheduledTask, deadlineTask,
+		headingTask,
 	}
 
 	fc := newFakeCloud("test@example.com", allItems...)
@@ -183,13 +191,19 @@ func TestHandleListTasks(t *testing.T) {
 		assertNotError(t, result)
 
 		tasks := resultJSON[[]TaskOutput](t, result)
-		if len(tasks) == 0 {
-			t.Fatal("expected at least one area task")
-		}
+		uuids := map[string]bool{}
 		for _, task := range tasks {
-			if task.UUID != "task-7" {
-				t.Errorf("unexpected task in area filter: %q", task.Title)
-			}
+			uuids[task.UUID] = true
+		}
+		// task-7 has direct area, task-8 inherits from project, task-12 inherits via heading→project
+		if !uuids["task-7"] {
+			t.Error("missing task-7 (direct area)")
+		}
+		if !uuids["task-8"] {
+			t.Error("missing task-8 (area inherited from project)")
+		}
+		if !uuids["task-12"] {
+			t.Error("missing task-12 (area inherited via heading→project)")
 		}
 	})
 
@@ -199,13 +213,16 @@ func TestHandleListTasks(t *testing.T) {
 		assertNotError(t, result)
 
 		tasks := resultJSON[[]TaskOutput](t, result)
-		if len(tasks) == 0 {
-			t.Fatal("expected at least one project task")
-		}
+		uuids := map[string]bool{}
 		for _, task := range tasks {
-			if task.UUID != "task-8" {
-				t.Errorf("unexpected task in project filter: %q", task.Title)
-			}
+			uuids[task.UUID] = true
+		}
+		// task-8 has direct pr, task-12 has agr→heading→pr
+		if !uuids["task-8"] {
+			t.Error("missing task-8 (direct parent)")
+		}
+		if !uuids["task-12"] {
+			t.Error("missing task-12 (via heading)")
 		}
 	})
 
@@ -307,6 +324,74 @@ func TestHandleListTasks(t *testing.T) {
 		req := makeReq(map[string]any{"area": "Nonexistent"})
 		result, _ := tmcp.handleFindTasks(context.Background(), req)
 		assertIsError(t, result)
+	})
+
+	t.Run("project filter includes tasks under headings via agr", func(t *testing.T) {
+		req := makeReq(map[string]any{"project": "My Project"})
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
+		assertNotError(t, result)
+
+		tasks := resultJSON[[]TaskOutput](t, result)
+		uuids := map[string]bool{}
+		for _, task := range tasks {
+			uuids[task.UUID] = true
+		}
+		// task-8 has direct pr, task-12 has agr→heading→pr
+		if !uuids["task-8"] {
+			t.Error("missing task-8 (direct parent)")
+		}
+		if !uuids["task-12"] {
+			t.Error("missing task-12 (via heading)")
+		}
+	})
+
+	t.Run("area filter includes tasks inheriting area from project", func(t *testing.T) {
+		req := makeReq(map[string]any{"area": "Work"})
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
+		assertNotError(t, result)
+
+		tasks := resultJSON[[]TaskOutput](t, result)
+		uuids := map[string]bool{}
+		for _, task := range tasks {
+			uuids[task.UUID] = true
+		}
+		// task-7 has direct area, task-8 and task-12 inherit from project
+		if !uuids["task-7"] {
+			t.Error("missing task-7 (direct area)")
+		}
+		if !uuids["task-8"] {
+			t.Error("missing task-8 (area inherited from project)")
+		}
+		if !uuids["task-12"] {
+			t.Error("missing task-12 (area inherited via heading→project)")
+		}
+	})
+
+	t.Run("taskToOutput resolves project and area for agr-only task", func(t *testing.T) {
+		req := makeReq(map[string]any{"contains_text": "Heading child"})
+		result, _ := tmcp.handleFindTasks(context.Background(), req)
+		assertNotError(t, result)
+
+		tasks := resultJSON[[]TaskOutput](t, result)
+		if len(tasks) != 1 {
+			t.Fatalf("expected 1 task, got %d", len(tasks))
+		}
+		task := tasks[0]
+		if task.Project == nil {
+			t.Fatal("expected non-nil project for heading task")
+		}
+		if task.Project.UUID != "proj-1" {
+			t.Errorf("expected project proj-1, got %s", task.Project.UUID)
+		}
+		if task.Project.Name != "My Project" {
+			t.Errorf("expected project name 'My Project', got %s", task.Project.Name)
+		}
+		if len(task.Areas) == 0 {
+			t.Fatal("expected inherited area for heading task")
+		}
+		if task.Areas[0].UUID != "area-1" {
+			t.Errorf("expected area area-1, got %s", task.Areas[0].UUID)
+		}
 	})
 }
 
