@@ -915,10 +915,10 @@ var DocsPageHTML = `<!DOCTYPE html>
 
   <div class="tool-entry">
     <div class="tool-entry-name">things_overview</div>
-    <div class="tool-entry-desc">Comprehensive snapshot: tags, area→project hierarchy, today's tasks, upcoming tasks</div>
+    <div class="tool-entry-desc">Comprehensive snapshot: tags, area→project hierarchy, today's items (tasks &amp; projects), upcoming items. Each item has a <code>type</code> field.</div>
     <table class="params-table">
       <tr><th>Parameter</th><th>Type</th><th>Description</th></tr>
-      <tr><td><span class="param-name">lookahead_days</span></td><td class="param-type">number</td><td>Days ahead to scan for upcoming tasks (default: 7)</td></tr>
+      <tr><td><span class="param-name">lookahead_days</span></td><td class="param-type">number</td><td>Days ahead to scan for upcoming items (default: 7)</td></tr>
     </table>
   </div>
 
