@@ -577,6 +577,7 @@ type Ref struct {
 
 type TaskOutput struct {
 	UUID             string  `json:"uuid"`
+	Type             string  `json:"type"`
 	Title            string  `json:"title"`
 	Note             string  `json:"note,omitempty"`
 	Status           string  `json:"status"`
@@ -673,8 +674,13 @@ func (t *ThingsMCP) taskToOutput(task *thingscloud.Task) TaskOutput {
 	if task.TodayIndexRefDate != nil {
 		effectiveDate = task.TodayIndexRefDate
 	}
+	typeStr := "task"
+	if task.Type == thingscloud.TaskTypeProject {
+		typeStr = "project"
+	}
 	out := TaskOutput{
 		UUID:     task.UUID,
+		Type:     typeStr,
 		Title:    task.Title,
 		Note:     task.Note,
 		Status:   statusString(task.Status),
@@ -2770,7 +2776,7 @@ func (t *ThingsMCP) handleOverview(_ context.Context, req mcp.CallToolRequest) (
 	cutoff := todayEnd.AddDate(0, 0, lookahead)
 
 	for _, task := range state.Tasks {
-		if task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
+		if task.Type == thingscloud.TaskTypeHeading {
 			continue
 		}
 		if isRecurringTemplate(task) {
@@ -2793,7 +2799,7 @@ func (t *ThingsMCP) handleOverview(_ context.Context, req mcp.CallToolRequest) (
 	// --- Upcoming tasks ---
 	var upcomingRaw []*thingscloud.Task
 	for _, task := range state.Tasks {
-		if task.Type == thingscloud.TaskTypeProject || task.Type == thingscloud.TaskTypeHeading {
+		if task.Type == thingscloud.TaskTypeHeading {
 			continue
 		}
 		if isRecurringTemplate(task) {
@@ -3494,7 +3500,7 @@ func defineTools(um *UserManager) []server.ServerTool {
 		},
 		{
 			Tool: mcp.NewTool("things_overview",
-				mcp.WithDescription("Returns a comprehensive snapshot of the user's task landscape in a single call. Includes all tags, the full area-to-project hierarchy (with IDs), today's tasks, and upcoming scheduled/due tasks within a configurable lookahead window. Use this as the first call in a session to orient yourself before drilling into specific tasks or projects."),
+				mcp.WithDescription("Returns a comprehensive snapshot of the user's task landscape in a single call. Includes all tags, the full area-to-project hierarchy (with IDs), today's items (tasks and projects), and upcoming scheduled/due items within a configurable lookahead window. Each item has a type field ('task' or 'project') to distinguish them. Use this as the first call in a session to orient yourself before drilling into specific tasks or projects."),
 				mcp.WithReadOnlyHintAnnotation(true),
 				mcp.WithDestructiveHintAnnotation(false),
 				mcp.WithIdempotentHintAnnotation(true),
