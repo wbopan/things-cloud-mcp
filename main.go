@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/crc32"
+	"hash/fnv"
 	"log"
 	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -125,6 +127,39 @@ func emptyNote() WireNote {
 
 func noteChecksum(s string) int64 {
 	return int64(crc32.ChecksumIEEE([]byte(s)))
+}
+
+func fnv32(s string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(strings.ToLower(strings.TrimSpace(s))))
+	return h.Sum32()
+}
+
+func parseProxyURLs(raw string) []*url.URL {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	var proxies []*url.URL
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		u, err := url.Parse(part)
+		if err != nil {
+			log.Printf("Skipping invalid proxy URL %q: %v", part, err)
+			continue
+		}
+		if u.Scheme == "" {
+			log.Printf("Skipping proxy URL without scheme %q", part)
+			continue
+		}
+		proxies = append(proxies, u)
+	}
+	return proxies
 }
 
 func textNote(s string) WireNote {
@@ -758,10 +793,13 @@ func (t *ThingsMCP) taskToOutput(task *thingscloud.Task) TaskOutput {
 // ---------------------------------------------------------------------------
 
 type ThingsMCP struct {
-	client  *thingscloud.Client
-	history *thingscloud.History
-	state   *memory.State
-	mu      sync.RWMutex
+	client      *thingscloud.Client
+	history     *thingscloud.History
+	state       *memory.State
+	proxyURL    *url.URL
+	mu          sync.RWMutex
+	lastSyncAt  time.Time
+	lastWriteAt time.Time
 }
 
 // bestHistory fetches all history keys for the account and returns the one
@@ -807,8 +845,13 @@ func bestHistory(c *thingscloud.Client) (*thingscloud.History, error) {
 }
 
 // NewThingsMCPForUser creates a ThingsMCP instance for a specific user.
-func NewThingsMCPForUser(email, password string) (*ThingsMCP, error) {
-	c := thingscloud.New(thingscloud.APIEndpoint, email, password)
+func NewThingsMCPForUser(email, password string, proxyURL *url.URL) (*ThingsMCP, error) {
+	opts := []thingscloud.ClientOption{}
+	if proxyURL != nil {
+		opts = append(opts, thingscloud.WithProxy(proxyURL))
+	}
+
+	c := thingscloud.New(thingscloud.APIEndpoint, email, password, opts...)
 	if os.Getenv("THINGS_DEBUG") != "" {
 		c.Debug = true
 	}
@@ -824,15 +867,11 @@ func NewThingsMCPForUser(email, password string) (*ThingsMCP, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get history: %w", err)
 	}
-	if err := history.Sync(); err != nil {
-		return nil, fmt.Errorf("sync history: %w", err)
-	}
-	log.Printf("History synced for %s (id=%s, serverIndex=%d).", email, history.ID, history.LatestServerIndex)
-
-	t := &ThingsMCP{client: c, history: history}
+	t := &ThingsMCP{client: c, history: history, proxyURL: proxyURL}
 	if err := t.fullRebuild(); err != nil {
 		return nil, err
 	}
+	log.Printf("History ready for %s (id=%s, serverIndex=%d).", email, history.ID, history.LatestServerIndex)
 
 	return t, nil
 }
@@ -861,6 +900,7 @@ type UserInfo struct {
 
 type UserManager struct {
 	users     map[string]*ThingsMCP // keyed by email
+	proxyURLs []*url.URL
 	oauth     *OAuthServer          // set after OAuthServer is created
 	diagStore *DiagStore            // set after OAuthServer is created
 	mu        sync.RWMutex
@@ -879,7 +919,11 @@ func (um *UserManager) GetOrCreateUser(email, password string) (*ThingsMCP, erro
 	um.mu.RUnlock()
 
 	// Create new user instance (outside lock to avoid blocking other users)
-	t, err := NewThingsMCPForUser(email, password)
+	proxy := um.proxyForEmail(email)
+	if proxy != nil {
+		log.Printf("User %s -> proxy %s", email, proxy.Host)
+	}
+	t, err := NewThingsMCPForUser(email, password, proxy)
 	if err != nil {
 		return nil, err
 	}
@@ -894,6 +938,15 @@ func (um *UserManager) GetOrCreateUser(email, password string) (*ThingsMCP, erro
 	um.mu.Unlock()
 
 	return t, nil
+}
+
+func (um *UserManager) proxyForEmail(email string) *url.URL {
+	if len(um.proxyURLs) == 0 || email == "" {
+		return nil
+	}
+
+	idx := int(fnv32(email) % uint32(len(um.proxyURLs)))
+	return um.proxyURLs[idx]
 }
 
 // httpContextFunc extracts user identity from the HTTP request and stores it in context.
@@ -1032,36 +1085,48 @@ func (t *ThingsMCP) getState() *memory.State {
 	return t.state
 }
 
+const syncDebounceWindow = 2 * time.Second
+
 // syncAndRebuild checks for new history commits and updates state.
 // Called from wrap() which serializes all MCP tool calls per-user,
 // so t.state and t.history fields are safe to read without a lock here.
 func (t *ThingsMCP) syncAndRebuild() error {
-	if err := t.history.Sync(); err != nil {
-		return fmt.Errorf("sync: %w", err)
-	}
-
 	// First time (no state built yet) → full rebuild
 	if t.state == nil {
 		return t.fullRebuild()
 	}
 
-	// Already up to date → skip
-	if t.history.LoadedServerIndex >= t.history.LatestServerIndex {
+	// Skip if recently synced and no writes since last sync
+	now := time.Now()
+	if now.Sub(t.lastSyncAt) < syncDebounceWindow &&
+		!t.lastWriteAt.After(t.lastSyncAt) {
 		return nil
 	}
 
-	// Delta available → incremental sync
-	return t.incrementalSync()
+	// Single-pass: Items() both checks for updates and returns them
+	err := t.incrementalSync()
+	if err == nil {
+		t.lastSyncAt = time.Now()
+	}
+	return err
 }
 
 func (t *ThingsMCP) writeAndSync(items ...thingscloud.Identifiable) error {
-	if err := t.history.Sync(); err != nil {
+	// Pre-write: sync remote changes and update LatestServerIndex for ancestor-index
+	if err := t.incrementalSync(); err != nil {
 		return fmt.Errorf("pre-write sync: %w", err)
 	}
 	if err := t.history.Write(items...); err != nil {
 		return err
 	}
-	return t.fullRebuild()
+	// Post-write: fetch only our new commit (not full history)
+	if err := t.incrementalSync(); err != nil {
+		return err
+	}
+	now := time.Now()
+	t.lastWriteAt = now
+	t.lastSyncAt = now
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -1417,7 +1482,11 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 	step1.Log = append(step1.Log, fmt.Sprintf("Verifying credentials for %s", maskEmail(email)))
 
 	start := time.Now()
-	client := thingscloud.New(thingscloud.APIEndpoint, email, password)
+	opts := []thingscloud.ClientOption{}
+	if t.proxyURL != nil {
+		opts = append(opts, thingscloud.WithProxy(t.proxyURL))
+	}
+	client := thingscloud.New(thingscloud.APIEndpoint, email, password, opts...)
 	verifyResp, err := client.Verify()
 	step1.DurationMs = time.Since(start).Milliseconds()
 
@@ -3842,8 +3911,11 @@ func serveDiagReportPage(w http.ResponseWriter, reportJSON string) {
 func main() {
 	log.SetFlags(log.Ltime | log.Lmsgprefix)
 	log.SetPrefix("[things-mcp] ")
+	proxyURLs := parseProxyURLs(os.Getenv("PROXY_URLS"))
+	log.Printf("Loaded %d proxy URLs", len(proxyURLs))
 
 	um := NewUserManager()
+	um.proxyURLs = proxyURLs
 
 	// Initialize OAuth server with persistent state
 	dataDir := os.Getenv("DATA_DIR")
@@ -3863,7 +3935,7 @@ func main() {
 
 	mcpServer := server.NewMCPServer(
 		"Things Cloud MCP",
-		"1.2.1",
+		"1.3.0",
 		server.WithToolCapabilities(false),
 		server.WithHooks(hooks),
 		server.WithInstructions("Things Cloud MCP server for managing Things 3 tasks, projects, areas, and tags. "+

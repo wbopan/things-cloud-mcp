@@ -1,6 +1,7 @@
 package thingscloud
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,9 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
+
+	"golang.org/x/time/rate"
 )
 
 const (
@@ -20,6 +24,35 @@ var (
 	// ErrUnauthorized is returned by the API when the credentials are wrong
 	ErrUnauthorized = errors.New("unauthorized")
 )
+
+// APIError represents a non-OK HTTP response from Things Cloud,
+// including the status code and the things-response header if present.
+type APIError struct {
+	StatusCode     int
+	Status         string
+	ThingsResponse string // value of the "things-response" header, e.g. "AbusePrevention"
+}
+
+func (e *APIError) Error() string {
+	if e.ThingsResponse != "" {
+		return fmt.Sprintf("things cloud: %s (things-response: %s)", e.Status, e.ThingsResponse)
+	}
+	return fmt.Sprintf("things cloud: %s", e.Status)
+}
+
+// IsAbusePrevention reports whether the error is a Things Cloud abuse prevention block.
+func (e *APIError) IsAbusePrevention() bool {
+	return e.StatusCode == http.StatusTooManyRequests && e.ThingsResponse == "AbusePrevention"
+}
+
+// newAPIError creates an APIError from an HTTP response.
+func newAPIError(resp *http.Response) *APIError {
+	return &APIError{
+		StatusCode:     resp.StatusCode,
+		Status:         resp.Status,
+		ThingsResponse: resp.Header.Get("Things-Response"),
+	}
+}
 
 // ClientInfo represents the device metadata sent in the things-client-info header.
 type ClientInfo struct {
@@ -60,10 +93,24 @@ type Client struct {
 	ClientInfo ClientInfo
 	Debug      bool
 
-	client *http.Client
-	common service
+	client      *http.Client
+	rateLimiter *rate.Limiter
+	common      service
 
 	Accounts *AccountService
+}
+
+// ClientOption allows customizing the things client before it is returned.
+type ClientOption func(*Client)
+
+// WithProxy configures the HTTP client to use the provided proxy URL.
+func WithProxy(proxyURL *url.URL) ClientOption {
+	return func(c *Client) {
+		if c.client == nil {
+			c.client = &http.Client{}
+		}
+		c.client.Transport = &http.Transport{Proxy: http.ProxyURL(proxyURL)}
+	}
 }
 
 type service struct {
@@ -71,14 +118,17 @@ type service struct {
 }
 
 // New initializes a things client
-func New(endpoint, email, password string) *Client {
+func New(endpoint, email, password string, opts ...ClientOption) *Client {
 	c := &Client{
-		Endpoint:   endpoint,
-		EMail:      email,
-		password:   password,
-		ClientInfo: DefaultClientInfo(),
-
-		client: &http.Client{},
+		Endpoint:    endpoint,
+		EMail:       email,
+		password:    password,
+		ClientInfo:  DefaultClientInfo(),
+		rateLimiter: rate.NewLimiter(rate.Every(time.Second), 1),
+		client:      &http.Client{},
+	}
+	for _, opt := range opts {
+		opt(c)
 	}
 	c.common.client = c
 	c.Accounts = (*AccountService)(&c.common)
@@ -89,6 +139,10 @@ func New(endpoint, email, password string) *Client {
 const ThingsUserAgent = "ThingsMac/32209501"
 
 func (c *Client) do(req *http.Request) (*http.Response, error) {
+	if err := c.rateLimiter.Wait(context.Background()); err != nil {
+		return nil, fmt.Errorf("rate limit wait: %w", err)
+	}
+
 	if req.Host == "" {
 		uri := fmt.Sprintf("%s%s", c.Endpoint, req.URL)
 		u, err := url.Parse(uri)

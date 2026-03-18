@@ -1,9 +1,10 @@
 module github.com/arthursoares/things-cloud-sdk
 
-go 1.24.0
+go 1.25.0
 
 require (
 	github.com/google/uuid v1.6.0
+	golang.org/x/time v0.15.0
 	modernc.org/sqlite v1.45.0
 )
 

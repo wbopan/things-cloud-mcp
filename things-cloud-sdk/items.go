@@ -53,7 +53,7 @@ func (h *History) Items(opts ItemsOptions) ([]Item, bool, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, false, fmt.Errorf("http response code: %s", resp.Status)
+		return nil, false, newAPIError(resp)
 	}
 
 	bs, err := io.ReadAll(resp.Body)

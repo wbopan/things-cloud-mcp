@@ -33,7 +33,7 @@ func (s *AccountService) Delete() error {
 		if resp.StatusCode == http.StatusUnauthorized {
 			return ErrUnauthorized
 		}
-		return fmt.Errorf("http response code: %s", resp.Status)
+		return newAPIError(resp)
 	}
 	return nil
 }
@@ -60,7 +60,7 @@ func (s *AccountService) AcceptSLA() error {
 		if resp.StatusCode == http.StatusUnauthorized {
 			return ErrUnauthorized
 		}
-		return fmt.Errorf("http response code: %s", resp.Status)
+		return newAPIError(resp)
 	}
 	return nil
 }
@@ -88,7 +88,7 @@ func (s *AccountService) Confirm(code string) error {
 		if resp.StatusCode == http.StatusUnauthorized {
 			return ErrUnauthorized
 		}
-		return fmt.Errorf("http response code: %s", resp.Status)
+		return newAPIError(resp)
 	}
 	return nil
 }
@@ -112,7 +112,7 @@ func (s *AccountService) SignUp(email, password string) (*Client, error) {
 	resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("http response code: %s", resp.Status)
+		return nil, newAPIError(resp)
 	}
 
 	return New(s.client.Endpoint, email, password), nil
@@ -142,7 +142,7 @@ func (s *AccountService) ChangePassword(newPassword string) (*Client, error) {
 		if resp.StatusCode == http.StatusUnauthorized {
 			return nil, ErrUnauthorized
 		}
-		return nil, fmt.Errorf("http response code: %s", resp.Status)
+		return nil, newAPIError(resp)
 	}
 
 	return New(s.client.Endpoint, s.client.EMail, newPassword), nil
