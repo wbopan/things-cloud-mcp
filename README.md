@@ -35,10 +35,13 @@ A `Dockerfile` is included. To deploy on [Fly.io](https://fly.io):
 brew install flyctl
 fly auth login
 
-fly launch --no-deploy   # generates fly.toml — accepts defaults or customize
+fly launch --no-deploy                   # generates fly.toml — accepts defaults or customize
+fly volumes create data --size 1         # 1 GB persistent volume for tokens and JWT secret
 fly secrets set JWT_SECRET=$(openssl rand -hex 32)
 fly deploy
 ```
+
+**Important:** The persistent volume is required. Without it, OAuth tokens and the JWT signing secret are stored on the container's ephemeral disk and wiped on every restart or deploy, forcing all connected clients to re-authenticate.
 
 Your endpoint will be `https://<app-name>.fly.dev`. The default config (256 MB RAM, shared CPU, scale-to-zero) runs within Fly's free allowance.
 
