@@ -4036,8 +4036,10 @@ func main() {
 	})
 
 	httpServer := &http.Server{
-		Addr:    addr,
-		Handler: mux,
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	log.Printf("Things Cloud MCP server listening on %s", addr)
