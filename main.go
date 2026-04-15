@@ -1221,10 +1221,20 @@ func (t *ThingsMCP) findTask(uuid string) *thingscloud.Task {
 	return nil
 }
 
-// isRecurringTemplate returns true if the task is a recurring template
-// (has rr but no rt). Templates are internal; the API only exposes instances.
+// isRecurringTemplate returns true if the task is a recurring template.
+// Templates have rr (repeater rule) set. When a user edits "all future
+// occurrences", Things creates a new template with both rr and rt (pointing
+// to the old template), so checking rr alone is the correct detection.
+// Instances never have rr — only rt pointing to their template.
 func isRecurringTemplate(task *thingscloud.Task) bool {
-	return task.Repeater != nil && len(task.RecurrenceIDs) == 0
+	return task.Repeater != nil
+}
+
+// isUntitledTask returns true if the task has no real title. Things sometimes
+// retains shells of tasks created and abandoned without ever being typed into;
+// these are not actionable items and should be hidden from list queries.
+func isUntitledTask(task *thingscloud.Task) bool {
+	return strings.TrimSpace(task.Title) == ""
 }
 
 // ---------------------------------------------------------------------------
@@ -2210,6 +2220,9 @@ func (t *ThingsMCP) handleFindTasks(_ context.Context, req mcp.CallToolRequest) 
 		if isRecurringTemplate(task) {
 			continue
 		}
+		if isUntitledTask(task) {
+			continue
+		}
 		// Default: exclude trashed and completed
 		if !inTrash && task.InTrash {
 			continue
@@ -2248,13 +2261,19 @@ func (t *ThingsMCP) handleFindTasks(_ context.Context, req mcp.CallToolRequest) 
 		}
 
 		// Date range filters (exclusive)
+		// Use effective date: TodayIndexRefDate (tir) tracks the current
+		// occurrence date for recurring instances; fall back to ScheduledDate.
+		effectiveScheduled := task.ScheduledDate
+		if task.TodayIndexRefDate != nil {
+			effectiveScheduled = task.TodayIndexRefDate
+		}
 		if scheduledBeforeDate != nil {
-			if task.ScheduledDate == nil || !task.ScheduledDate.Before(*scheduledBeforeDate) {
+			if effectiveScheduled == nil || !effectiveScheduled.Before(*scheduledBeforeDate) {
 				continue
 			}
 		}
 		if scheduledAfterDate != nil {
-			if task.ScheduledDate == nil || !task.ScheduledDate.After(*scheduledAfterDate) {
+			if effectiveScheduled == nil || !effectiveScheduled.After(*scheduledAfterDate) {
 				continue
 			}
 		}
@@ -2503,6 +2522,9 @@ func (t *ThingsMCP) handleShowProject(_ context.Context, req mcp.CallToolRequest
 		if isRecurringTemplate(task) {
 			continue
 		}
+		if isUntitledTask(task) {
+			continue
+		}
 		switch statusFilter {
 		case "completed":
 			if task.Status != 3 {
@@ -2645,6 +2667,9 @@ func (t *ThingsMCP) handleFindProjects(_ context.Context, req mcp.CallToolReques
 		if isRecurringTemplate(task) {
 			continue
 		}
+		if isUntitledTask(task) {
+			continue
+		}
 		if !inTrash && task.InTrash {
 			continue
 		}
@@ -2682,13 +2707,19 @@ func (t *ThingsMCP) handleFindProjects(_ context.Context, req mcp.CallToolReques
 		}
 
 		// Date range filters (exclusive)
+		// Use effective date: TodayIndexRefDate (tir) tracks the current
+		// occurrence date for recurring instances; fall back to ScheduledDate.
+		effectiveScheduled := task.ScheduledDate
+		if task.TodayIndexRefDate != nil {
+			effectiveScheduled = task.TodayIndexRefDate
+		}
 		if scheduledBeforeDate != nil {
-			if task.ScheduledDate == nil || !task.ScheduledDate.Before(*scheduledBeforeDate) {
+			if effectiveScheduled == nil || !effectiveScheduled.Before(*scheduledBeforeDate) {
 				continue
 			}
 		}
 		if scheduledAfterDate != nil {
-			if task.ScheduledDate == nil || !task.ScheduledDate.After(*scheduledAfterDate) {
+			if effectiveScheduled == nil || !effectiveScheduled.After(*scheduledAfterDate) {
 				continue
 			}
 		}
@@ -2910,6 +2941,9 @@ func (t *ThingsMCP) handleOverview(_ context.Context, req mcp.CallToolRequest) (
 		if isRecurringTemplate(task) {
 			continue
 		}
+		if isUntitledTask(task) {
+			continue
+		}
 		if task.Status != 0 || task.InTrash {
 			continue
 		}
@@ -2931,6 +2965,9 @@ func (t *ThingsMCP) handleOverview(_ context.Context, req mcp.CallToolRequest) (
 			continue
 		}
 		if isRecurringTemplate(task) {
+			continue
+		}
+		if isUntitledTask(task) {
 			continue
 		}
 		if task.Status != 0 || task.InTrash {
@@ -3935,7 +3972,7 @@ func main() {
 
 	mcpServer := server.NewMCPServer(
 		"Things Cloud MCP",
-		"1.3.0",
+		"1.3.2",
 		server.WithToolCapabilities(false),
 		server.WithHooks(hooks),
 		server.WithInstructions("Things Cloud MCP server for managing Things 3 tasks, projects, areas, and tags. "+
@@ -4039,6 +4076,7 @@ func main() {
 		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 30 * time.Second,
+		WriteTimeout:      5 * time.Minute,
 		IdleTimeout:       120 * time.Second,
 	}
 

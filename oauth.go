@@ -506,7 +506,11 @@ func (o *OAuthServer) handleAuthorizePost(w http.ResponseWriter, r *http.Request
 	}
 
 	// Verify Things Cloud credentials
-	c := thingscloud.New(thingscloud.APIEndpoint, email, password)
+	var opts []thingscloud.ClientOption
+	if proxy := o.um.proxyForEmail(email); proxy != nil {
+		opts = append(opts, thingscloud.WithProxy(proxy))
+	}
+	c := thingscloud.New(thingscloud.APIEndpoint, email, password, opts...)
 	if _, err := c.Verify(); err != nil {
 		o.mu.RLock()
 		client := o.clients[clientID]
