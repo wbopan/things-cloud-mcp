@@ -348,18 +348,44 @@ func offsetToTime(secs int) string {
 // Index helpers — find the minimum ix among siblings so new items sort to top
 // ---------------------------------------------------------------------------
 
+// nextTopIndexBelow returns a sort index strictly less than minIx, clamped to
+// be >= 1. Use this when computing the `ix` for a new item that should sort
+// above all existing siblings. Things' sync engine crashes
+// (LegacySCHistoryPerformSync EXC_BREAKPOINT brk 1, Swift precondition) when
+// processing a Task6 item with a non-positive sort index during incremental
+// history pulls — so this helper guarantees a safe value regardless of what
+// minIndexWhere returns. Centralising the clamp here means future callers
+// cannot reintroduce the negative-ix bug by forgetting the guard at the
+// call site.
+func nextTopIndexBelow(minIx int) int {
+	if minIx-1 < 1 {
+		return 1
+	}
+	return minIx - 1
+}
+
 // minIndexWhere returns the minimum Index among tasks matching the predicate.
+// Uses a large starting value so that any real task index (always positive in
+// Things) is found as the true minimum. Falls back to 1 when no tasks match
+// or when state is uninitialised.
 func (t *ThingsMCP) minIndexWhere(match func(*thingscloud.Task) bool) int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	minIx := 0
 	if t.state == nil {
-		return minIx
+		return 1
 	}
+	minIx := 1 << 30 // larger than any real Things sort index
+	found := false
 	for _, task := range t.state.Tasks {
-		if match(task) && task.Index < minIx {
-			minIx = task.Index
+		if match(task) {
+			if !found || task.Index < minIx {
+				minIx = task.Index
+				found = true
+			}
 		}
+	}
+	if !found {
+		return 1
 	}
 	return minIx
 }
@@ -3033,7 +3059,7 @@ func (t *ThingsMCP) handleCreateTask(_ context.Context, req mcp.CallToolRequest)
 	}
 
 	// Compute ix so the new task sorts to the top among siblings
-	ix := t.minSiblingIndex(opts["project_uuid"], opts["heading_uuid"]) - 1
+	ix := nextTopIndexBelow(t.minSiblingIndex(opts["project_uuid"], opts["heading_uuid"]))
 
 	taskUUID := generateUUID()
 	payload := newTaskCreatePayload(title, opts, ix)
@@ -3085,7 +3111,7 @@ func (t *ThingsMCP) handleCreateProject(_ context.Context, req mcp.CallToolReque
 		}
 	}
 
-	ix := t.minProjectIndex(opts["area_uuid"]) - 1
+	ix := nextTopIndexBelow(t.minProjectIndex(opts["area_uuid"]))
 
 	projectUUID := generateUUID()
 	payload := newTaskCreatePayload(title, opts, ix)
@@ -3113,7 +3139,7 @@ func (t *ThingsMCP) handleCreateHeading(_ context.Context, req mcp.CallToolReque
 		return errResult(err.Error()), nil
 	}
 
-	ix := t.minHeadingIndex(projectUUID) - 1
+	ix := nextTopIndexBelow(t.minHeadingIndex(projectUUID))
 
 	headingUUID := generateUUID()
 	payload := newTaskCreatePayload(title, opts, ix)
