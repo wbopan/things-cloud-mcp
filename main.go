@@ -1137,11 +1137,58 @@ func (t *ThingsMCP) syncAndRebuild() error {
 	return err
 }
 
+// minSortIndex is the smallest sort index Things tolerates. Things' sync
+// engine (LegacySCHistoryPerformSync) crashes with an EXC_BREAKPOINT Swift
+// precondition when it processes a Task6 history commit for an item whose sort
+// index (ix) is non-positive.
+const minSortIndex = 1
+
+// healNonPositiveIndex guards every Task6 update against that crash. Some
+// legacy items carry a non-positive ix in the cloud baseline; editing one
+// re-emits it into a fresh commit and trips the precondition on every syncing
+// device, taking down the Mac and iOS apps until the cloud is repaired — even
+// when the edit itself (e.g. a trash) never touches ix. For each Task6 update
+// being written this ensures the item's resulting ix is >= minSortIndex: it
+// clamps an explicitly-set ix, and otherwise repairs an item whose currently
+// stored ix is non-positive by injecting a safe ix into the same commit, so
+// the commit leaves the item in a state Things can process. Item creation
+// clamps separately at the source via nextTopIndexBelow.
+func (t *ThingsMCP) healNonPositiveIndex(items []thingscloud.Identifiable) {
+	state := t.getState()
+	for _, it := range items {
+		we, ok := it.(writeEnvelope)
+		if !ok || we.kind != "Task6" || we.action != 1 {
+			continue
+		}
+		p, ok := we.payload.(map[string]any)
+		if !ok {
+			continue
+		}
+		if raw, set := p["ix"]; set {
+			// Clamp an explicitly-written index (e.g. a reorder) to a safe value.
+			if iv, ok := raw.(int); ok && iv < minSortIndex {
+				p["ix"] = minSortIndex
+			}
+			continue
+		}
+		// No ix in this commit: repair the item if its stored ix is non-positive.
+		if state == nil {
+			continue
+		}
+		if task, ok := state.Tasks[we.id]; ok && task.Index < minSortIndex {
+			p["ix"] = minSortIndex
+		}
+	}
+}
+
 func (t *ThingsMCP) writeAndSync(items ...thingscloud.Identifiable) error {
 	// Pre-write: sync remote changes and update LatestServerIndex for ancestor-index
 	if err := t.incrementalSync(); err != nil {
 		return fmt.Errorf("pre-write sync: %w", err)
 	}
+	// Guard against the Things sync-engine crash on non-positive sort indexes,
+	// using the state just refreshed by the pre-write sync.
+	t.healNonPositiveIndex(items)
 	if err := t.history.Write(items...); err != nil {
 		return err
 	}

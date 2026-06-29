@@ -7,7 +7,43 @@ import (
 	"time"
 
 	thingscloud "github.com/arthursoares/things-cloud-sdk"
+	memory "github.com/arthursoares/things-cloud-sdk/state/memory"
 )
+
+// TestHealNonPositiveIndex covers the guard against the Things sync-engine
+// EXC_BREAKPOINT crash: any Task6 update touching an item with a non-positive
+// sort index must leave that item's ix >= minSortIndex.
+func TestHealNonPositiveIndex(t *testing.T) {
+	state := memory.NewState()
+	state.Tasks["poison"] = &thingscloud.Task{UUID: "poison", Index: -5388}
+	state.Tasks["healthy"] = &thingscloud.Task{UUID: "healthy", Index: 12}
+	tmcp := newTestThingsMCPDirect(state)
+
+	// Trash an item carrying a legacy negative ix (the real incident): the
+	// commit sets no ix, so the guard must inject a clamped one.
+	trash := writeEnvelope{id: "poison", action: 1, kind: "Task6", payload: map[string]any{"tr": true}}
+	// Editing a healthy item must not add an ix it didn't have.
+	edit := writeEnvelope{id: "healthy", action: 1, kind: "Task6", payload: map[string]any{"tt": "x"}}
+	// An explicitly-written non-positive ix (e.g. a reorder) must be clamped.
+	move := writeEnvelope{id: "healthy", action: 1, kind: "Task6", payload: map[string]any{"ix": -7}}
+	// Creates (action 0) own their clamping at the source; leave them untouched.
+	create := writeEnvelope{id: "new", action: 0, kind: "Task6", payload: map[string]any{"ix": -1}}
+
+	tmcp.healNonPositiveIndex([]thingscloud.Identifiable{trash, edit, move, create})
+
+	if got := trash.payload.(map[string]any)["ix"]; got != minSortIndex {
+		t.Errorf("trash of poison item: ix = %v, want %d", got, minSortIndex)
+	}
+	if _, set := edit.payload.(map[string]any)["ix"]; set {
+		t.Errorf("edit of healthy item: ix should not be injected")
+	}
+	if got := move.payload.(map[string]any)["ix"]; got != minSortIndex {
+		t.Errorf("explicit negative ix: ix = %v, want %d", got, minSortIndex)
+	}
+	if got := create.payload.(map[string]any)["ix"]; got != -1 {
+		t.Errorf("create action: ix = %v, want -1 (untouched)", got)
+	}
+}
 
 // ---------------------------------------------------------------------------
 // parseDate
