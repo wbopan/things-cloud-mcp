@@ -1542,11 +1542,14 @@ func isRecurringTemplate(task *thingscloud.Task) bool {
 	return task.Repeater != nil
 }
 
-// isUntitledTask returns true if the task has no real title. Things sometimes
-// retains shells of tasks created and abandoned without ever being typed into;
-// these are not actionable items and should be hidden from list queries.
+// isUntitledTask returns true if the task has no real title and no note.
+// Things sometimes retains shells of tasks created and abandoned without
+// ever being typed into; these are not actionable items and should be
+// hidden from list queries. A blank title with a real note (e.g. a link
+// or text saved via a share extension that never got a title typed in) is
+// still actionable, so it is not considered untitled.
 func isUntitledTask(task *thingscloud.Task) bool {
-	return strings.TrimSpace(task.Title) == ""
+	return strings.TrimSpace(task.Title) == "" && strings.TrimSpace(task.Note) == ""
 }
 
 // ---------------------------------------------------------------------------

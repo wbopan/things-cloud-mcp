@@ -444,3 +444,32 @@ func TestOffsetToTime(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// isUntitledTask
+// ---------------------------------------------------------------------------
+
+func TestIsUntitledTask(t *testing.T) {
+	tests := []struct {
+		name  string
+		title string
+		note  string
+		want  bool
+	}{
+		{"no title, no note", "", "", true},
+		{"whitespace title, no note", "   ", "", true},
+		{"has title, no note", "Buy milk", "", false},
+		{"no title, has note", "", "https://example.com", false},
+		{"whitespace title, whitespace note", " ", "  ", true},
+		{"has title, has note", "Buy milk", "2%", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			task := &thingscloud.Task{Title: tt.title, Note: tt.note}
+			if got := isUntitledTask(task); got != tt.want {
+				t.Errorf("isUntitledTask(title=%q, note=%q) = %v, want %v", tt.title, tt.note, got, tt.want)
+			}
+		})
+	}
+}
