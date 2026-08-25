@@ -3,6 +3,7 @@ package memory
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	// "fmt"
 	"sort"
 
@@ -304,7 +305,7 @@ func (s *State) Update(items ...things.Item) error {
 		}
 		var target any
 		switch rawItem.Kind {
-		case things.ItemKindTask, things.ItemKindTask4, things.ItemKindTask3, things.ItemKindTaskPlain:
+		case things.ItemKindTask, things.ItemKindTask7, things.ItemKindTask4, things.ItemKindTask3, things.ItemKindTaskPlain:
 			target = &things.TaskActionItemPayload{}
 		case things.ItemKindChecklistItem, things.ItemKindChecklistItem2, things.ItemKindChecklistItem3:
 			target = &things.CheckListActionItemPayload{}
@@ -315,7 +316,13 @@ func (s *State) Update(items ...things.Item) error {
 		case things.ItemKindTombstone, things.ItemKindTombstonePlain:
 			target = &things.TombstoneActionItemPayload{}
 		default:
-			return fmt.Errorf("item %s has unsupported kind %q", rawItem.UUID, rawItem.Kind)
+			// An item kind the SDK doesn't model yet (e.g. a new Things
+			// release introducing a new object type) must not take down
+			// every read/write for the whole account. Skip it and move
+			// on — mirrors the resilience sync/process.go already has via
+			// UnknownChange, applied here to the state-rebuild path.
+			log.Printf("state: skipping item %s with unrecognized kind %q", rawItem.UUID, rawItem.Kind)
+			continue
 		}
 		if err := json.Unmarshal(rawItem.P, target); err != nil {
 			return fmt.Errorf("decode item %s (%s): %w", rawItem.UUID, rawItem.Kind, err)
@@ -331,7 +338,7 @@ func (s *State) Update(items ...things.Item) error {
 			rawItem.UUID = things.EncodeLegacyIdentifier(rawItem.UUID)
 		}
 		switch rawItem.Kind {
-		case things.ItemKindTask, things.ItemKindTask4, things.ItemKindTask3, things.ItemKindTaskPlain:
+		case things.ItemKindTask, things.ItemKindTask7, things.ItemKindTask4, things.ItemKindTask3, things.ItemKindTaskPlain:
 			item := things.TaskActionItem{Item: rawItem}
 			_ = json.Unmarshal(rawItem.P, &item.P)
 			if legacy {

@@ -287,6 +287,48 @@ func TestState_Update(t *testing.T) {
 	})
 }
 
+func TestState_Update_Task7(t *testing.T) {
+	t.Run("Create Task via Task7 kind", func(t *testing.T) {
+		s := NewState()
+		if err := s.Update(things.Item{
+			Action: things.ItemActionCreated,
+			Kind:   things.ItemKindTask7,
+			P:      json.RawMessage(newTaskPayload),
+		}); err != nil {
+			t.Fatal(err.Error())
+		}
+
+		if len(s.Tasks) != 1 {
+			t.Fatal("Expected a Task7 item to decode into a task, same as Task6")
+		}
+	})
+}
+
+func TestState_Update_UnrecognizedKind(t *testing.T) {
+	t.Run("skips unknown kind without aborting the rest of the batch", func(t *testing.T) {
+		s := NewState()
+		err := s.Update(
+			things.Item{
+				Action: things.ItemActionCreated,
+				Kind:   things.ItemKind("Command"),
+				P:      json.RawMessage(`{}`),
+			},
+			things.Item{
+				Action: things.ItemActionCreated,
+				Kind:   things.ItemKindTask,
+				P:      json.RawMessage(newTaskPayload),
+			},
+		)
+		if err != nil {
+			t.Fatalf("expected an unrecognized kind to be skipped rather than error, got: %v", err)
+		}
+
+		if len(s.Tasks) != 1 {
+			t.Fatal("expected the known task after the unrecognized item to still be applied")
+		}
+	})
+}
+
 func TestState_Tombstone(t *testing.T) {
 	t.Parallel()
 
@@ -495,16 +537,20 @@ func TestStateUpdateRejectsMalformedKnownItem(t *testing.T) {
 	}
 }
 
-func TestStateUpdateRejectsUnknownKind(t *testing.T) {
+// This test originally used "Task7" as its example of a hypothetical future
+// kind that should be rejected. Things 3.23 then introduced a real Task7 item
+// kind for repeating tasks (see TestState_Update_Task7), so an item kind the
+// SDK genuinely doesn't recognize yet needs its own placeholder name here.
+func TestStateUpdateSkipsUnknownKind(t *testing.T) {
 	s := NewState()
 	err := s.Update(things.Item{
 		UUID:   "future-item",
-		Kind:   things.ItemKind("Task7"),
+		Kind:   things.ItemKind("SomeFutureKind"),
 		Action: things.ItemActionCreated,
 		P:      []byte(`{}`),
 	})
-	if err == nil {
-		t.Fatal("expected unknown kind error")
+	if err != nil {
+		t.Fatalf("expected unrecognized kind to be skipped rather than error, got: %v", err)
 	}
 }
 

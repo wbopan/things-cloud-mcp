@@ -2086,7 +2086,7 @@ func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
 			if ierr == nil {
 				var newestDate time.Time
 				for _, item := range items {
-					if item.Kind != thingscloud.ItemKindTask {
+					if item.Kind != thingscloud.ItemKindTask && item.Kind != thingscloud.ItemKindTask7 {
 						continue
 					}
 					var payload thingscloud.TaskActionItemPayload
@@ -2295,7 +2295,7 @@ func (t *ThingsMCP) diagnoseSteps4to7(history *thingscloud.History, report *diag
 		}
 		for _, item := range allItems[tailStart:] {
 			ti := tailItem{Kind: string(item.Kind), Action: int(item.Action)}
-			if item.Kind == thingscloud.ItemKindTask {
+			if item.Kind == thingscloud.ItemKindTask || item.Kind == thingscloud.ItemKindTask7 {
 				var payload thingscloud.TaskActionItemPayload
 				if uerr := json.Unmarshal(item.P, &payload); uerr == nil {
 					if payload.CreationDate != nil {

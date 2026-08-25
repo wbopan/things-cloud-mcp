@@ -59,6 +59,12 @@ var (
 	ItemKindChecklistItem2 ItemKind = "ChecklistItem2"
 	ItemKindChecklistItem3 ItemKind = "ChecklistItem3"
 	// ItemKindTask identifies a Task or Subtask
+	// ItemKindTask7 is the schema Things 3.23 ("Repeating To-Dos,
+	// Refined") writes for repeating tasks. Its payload appears to be a
+	// superset of Task6's — decoded here as the same TaskActionItemPayload
+	// shape, so any fields the SDK doesn't model yet are simply ignored by
+	// json.Unmarshal rather than causing a decode failure.
+	ItemKindTask7     ItemKind = "Task7"
 	ItemKindTask      ItemKind = "Task6"
 	ItemKindTask4     ItemKind = "Task4"
 	ItemKindTask3     ItemKind = "Task3"
