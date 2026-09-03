@@ -1962,10 +1962,21 @@ func extractCredentials(ctx context.Context, um *UserManager) (string, string, e
 // Diagnostic handler: steps 1-3
 // ---------------------------------------------------------------------------
 
+// newDiagReport returns a report whose slices are empty rather than nil. The
+// tool declares steps, warnings and errors as arrays in its output schema and
+// the MCP client validates against it — a nil slice marshals to `null`, which
+// fails validation and rejects the whole call. That made diagnose unusable on
+// exactly the accounts that had nothing to report. Every other handler already
+// guards this (see handleFindAreas); this constructor keeps the guarantee in
+// one place so a new early return cannot lose it.
+func newDiagReport() *diagReport {
+	return &diagReport{Steps: []diagStep{}, Warnings: []string{}, Errors: []string{}}
+}
+
 func (t *ThingsMCP) handleDiagnose(email, password string) *diagReport {
-	report := &diagReport{}
-	var allWarnings []string
-	var allErrors []string
+	report := newDiagReport()
+	allWarnings := []string{}
+	allErrors := []string{}
 
 	// Step 1: credential_verification
 	step1 := diagStep{
