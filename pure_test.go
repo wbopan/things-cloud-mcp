@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"hash/crc32"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,10 +16,10 @@ import (
 
 func TestParseDate(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  string
+		name    string
+		input   string
 		wantNil bool
-		check  func(t *testing.T, got *time.Time)
+		check   func(t *testing.T, got *time.Time)
 	}{
 		{
 			name:  "YYYY-MM-DD returns UTC midnight",
@@ -442,5 +443,35 @@ func TestOffsetToTime(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostic report shape
+// ---------------------------------------------------------------------------
+
+// A healthy account produces no warnings and no errors — and that is precisely
+// the case that used to break. The output schema declares these fields as
+// arrays, the MCP client validates against it, and a nil slice marshals to
+// `null`, so the client rejected the whole response:
+//
+//	Invalid structured content returned by tool things_diagnose:
+//	None is not of type 'array'
+//
+// The tool for debugging sync problems therefore failed on every account that
+// had nothing to report.
+func TestDiagReportMarshalsEmptyArraysNotNull(t *testing.T) {
+	raw, err := json.Marshal(newDiagReport())
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := string(raw)
+	for _, want := range []string{`"steps":[]`, `"warnings":[]`, `"errors":[]`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %s in %s", want, got)
+		}
+	}
+	if strings.Contains(got, "null") {
+		t.Errorf("no field may marshal to null — the schema declares arrays: %s", got)
 	}
 }
