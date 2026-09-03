@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	_ "time/tzdata" // embed IANA timezone DB so MCP_TIMEZONE works on minimal images (Alpine/scratch) that lack /usr/share/zoneinfo
 
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -194,8 +195,50 @@ func nowTs() float64 {
 	return float64(time.Now().UnixNano()) / 1e9
 }
 
+// userTimeZone returns the timezone used to interpret "today" and other
+// date-only operations from the user's perspective. Configurable via
+// MCP_TIMEZONE (preferred) or TZ environment variables. Falls back to UTC.
+//
+// Why this matters: Things stores date-only fields (sr, tir, dd) as UTC
+// midnight of the calendar date. Determining what calendar date "today"
+// is must use the *user's* timezone — not the server's — otherwise users
+// in non-UTC zones get wrong-day results around midnight. Example: a
+// Berlin user (CEST = UTC+2) at 01:00 local on May 6 is at 23:00 UTC on
+// May 5; without TZ awareness, "today" would be computed as May 5 from
+// the server's UTC clock, even though the user clearly means May 6.
+//
+// The location is resolved on first call and cached; restart the server
+// after changing MCP_TIMEZONE.
+var (
+	userTZOnce sync.Once
+	userTZLoc  *time.Location
+)
+
+func userTimeZone() *time.Location {
+	userTZOnce.Do(func() {
+		for _, key := range []string{"MCP_TIMEZONE", "TZ"} {
+			if name := os.Getenv(key); name != "" {
+				if loc, err := time.LoadLocation(name); err == nil {
+					userTZLoc = loc
+					log.Printf("Date interpretation timezone: %s (from %s)", name, key)
+					return
+				} else {
+					log.Printf("Invalid %s=%q, ignoring: %v", key, name, err)
+				}
+			}
+		}
+		userTZLoc = time.UTC
+		log.Printf("Date interpretation timezone: UTC (default; set MCP_TIMEZONE to override)")
+	})
+	return userTZLoc
+}
+
+// todayMidnightUTC returns the UTC unix timestamp for the start of today's
+// calendar date in the user's timezone. Things' wire format stores
+// date-only fields as UTC midnight of the calendar date, so we keep the
+// UTC anchor but pick the calendar date from the user's perspective.
 func todayMidnightUTC() int64 {
-	now := time.Now()
+	now := time.Now().In(userTimeZone())
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Unix()
 }
 
@@ -815,10 +858,15 @@ func scheduleString(st thingscloud.TaskSchedule, scheduledDate *time.Time, start
 	}
 }
 
-// isToday returns true if t falls on today's date (UTC).
+// isToday returns true if t falls on today's calendar date in the user's
+// timezone. Both t and "now" are converted into the user's TZ before the
+// date components are compared, so the answer matches what the user sees
+// on their calendar — not what UTC says.
 func isToday(t time.Time) bool {
-	now := time.Now().UTC()
-	return t.Year() == now.Year() && t.Month() == now.Month() && t.Day() == now.Day()
+	tz := userTimeZone()
+	tInTZ := t.In(tz)
+	now := time.Now().In(tz)
+	return tInTZ.Year() == now.Year() && tInTZ.Month() == now.Month() && tInTZ.Day() == now.Day()
 }
 
 // effectiveScheduledDate returns the date Things uses for the visible
@@ -845,8 +893,13 @@ func isScheduledForTodayOrPast(task *thingscloud.Task) bool {
 	if date == nil {
 		return false
 	}
-	now := time.Now().UTC()
-	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
+	// Compute today's end in the user's timezone, then convert to UTC for
+	// comparison with the stored timestamp. This ensures a task scheduled
+	// for "today" stays in the Today filter until midnight in the user's
+	// view — not until midnight UTC, which can be hours off.
+	tz := userTimeZone()
+	now := time.Now().In(tz)
+	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, tz)
 	return !date.After(todayEnd)
 }
 
