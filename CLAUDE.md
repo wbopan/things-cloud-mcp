@@ -76,3 +76,12 @@ Worktree directory: `.claude/worktrees/`. Always create feature worktrees here.
 ## OAuth (oauth.go)
 
 OAuth 2.1 with PKCE. State persisted in SQLite (`DATA_DIR/oauth.db`): clients, auth codes, refresh tokens, JWT secret. Endpoints: `/authorize`, `/token`, `/register`, `/.well-known/oauth-*`.
+
+**Every rejected token leaves `/mcp` as a 401 with a `WWW-Authenticate`
+challenge, never as a tool error.** `requireBearer` validates the Bearer token at
+the transport, before the request can reach a handler. A handler that fails
+authentication returns its error as a JSON-RPC result — HTTP 200 with `isError` —
+and a client cannot read that as "re-authenticate": it replays the dead token,
+never runs the refresh grant, and the untouched refresh token ages out, so one
+expired hour turns into a manual re-authorization. Basic auth passes through:
+CLI clients carry their credentials in the header and have nothing to refresh.

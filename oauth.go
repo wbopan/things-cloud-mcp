@@ -493,6 +493,76 @@ func (o *OAuthServer) parseJWT(tokenStr string) (map[string]any, error) {
 	return claims, nil
 }
 
+// bearerToken returns the token of an "Authorization: Bearer ..." header. Both
+// the context func and the /mcp guard go through here so they cannot disagree
+// about what counts as a Bearer request — a header the guard waved through but
+// the context func did not recognise would reach a tool handler unauthenticated.
+func bearerToken(authHeader string) (string, bool) {
+	const prefix = "Bearer "
+	if !strings.HasPrefix(authHeader, prefix) {
+		return "", false
+	}
+	return strings.TrimPrefix(authHeader, prefix), true
+}
+
+// writeBearerChallenge answers 401 with the challenge that makes an MCP client
+// run its refresh-token grant (RFC 6750 section 3, RFC 9728 section 5.1). reason
+// is optional and becomes error_description.
+func writeBearerChallenge(w http.ResponseWriter, base, reason string) {
+	challenge := "Bearer "
+	if reason != "" {
+		challenge += `error="invalid_token", error_description="` + quotedStringSafe(reason) + `", `
+	}
+	challenge += `resource_metadata="` + base + `/.well-known/oauth-protected-resource"`
+	w.Header().Set("WWW-Authenticate", challenge)
+	w.WriteHeader(http.StatusUnauthorized)
+}
+
+// quotedStringSafe keeps only what a quoted-string may carry (RFC 9110 section
+// 5.6.4), so an error message can never break out of the header.
+func quotedStringSafe(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '"' || r == '\\' || r < 0x20 || r > 0x7e {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// requireBearer rejects an expired or otherwise invalid access token with 401
+// before the request can reach a tool handler.
+//
+// A handler that fails authentication returns its error as a JSON-RPC result —
+// HTTP 200 with isError. A client cannot tell that apart from "the tool ran and
+// said no", so it never starts a refresh: it replays the dead token forever, the
+// rotation stops, and the untouched refresh token quietly ages out. What began
+// as one expired hour ends as a connector that needs to be authorized by hand.
+// The 401 with a WWW-Authenticate challenge is the only signal that starts the
+// refresh, so it has to be written here, at the transport, not in a handler.
+//
+// Basic auth passes through untouched: CLI clients carry the credentials in the
+// header itself and have nothing to refresh.
+func requireBearer(o *OAuthServer, next http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			writeBearerChallenge(w, getBaseURL(r), "")
+			return
+		}
+		if token, ok := bearerToken(authHeader); ok {
+			if o == nil {
+				writeBearerChallenge(w, getBaseURL(r), "bearer authentication not configured")
+				return
+			}
+			if _, _, err := o.ResolveBearer(token); err != nil {
+				writeBearerChallenge(w, getBaseURL(r), err.Error())
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	}
+}
+
 // ResolveBearer validates a Bearer token and returns the user's ThingsMCP instance.
 func (o *OAuthServer) ResolveBearer(token string) (string, string, error) {
 	claims, err := o.parseJWT(token)
@@ -1022,7 +1092,7 @@ func (o *OAuthServer) handleRefreshTokenGrant(w http.ResponseWriter, r *http.Req
 		Email:     email,
 		Password:  password,
 		ClientID:  clientID,
-		ExpiresAt: time.Now().Add(30 * 24 * time.Hour),
+		ExpiresAt: time.Now().Add(30 * 24 * time.Hour), // 30 days
 	}
 	if err := o.rotateRefreshToken(refreshTok, newRT); err != nil {
 		restoreOldToken()

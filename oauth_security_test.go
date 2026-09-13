@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/base64"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -109,5 +112,132 @@ func TestOAuthMigratesLegacyPlaintextCredentials(t *testing.T) {
 	}
 	if got := migrated.refreshTokens[refreshTokenKey(rawRefresh)]; got == nil || got.Password != password {
 		t.Fatal("migrated refresh token was not loaded")
+	}
+}
+
+// newBearerTestServer builds an OAuth server holding one authorized user, so a
+// token can be minted for it without going through the whole authorize flow.
+func newBearerTestServer(t *testing.T, email, password string) *OAuthServer {
+	t.Helper()
+	t.Setenv("CREDENTIALS_SECRET", "")
+	o := NewOAuthServer(NewUserManager(), t.TempDir())
+	t.Cleanup(func() { o.db.Close() })
+	if err := o.persistCredential(email, password); err != nil {
+		t.Fatalf("persist credential: %v", err)
+	}
+	o.credentials[email] = password
+	return o
+}
+
+func (o *OAuthServer) testToken(t *testing.T, email string, exp time.Time) string {
+	t.Helper()
+	token, err := o.createJWT(map[string]any{
+		"sub": email, "iss": "https://example.test",
+		"exp": exp.Unix(), "iat": time.Now().Unix(), "scope": "things:manage",
+	})
+	if err != nil {
+		t.Fatalf("create token: %v", err)
+	}
+	return token
+}
+
+// A bad access token must fail at the transport with 401 and a challenge, never
+// inside a tool handler. A handler's error leaves as HTTP 200 with isError, and
+// a client cannot read that as "re-authenticate": it keeps replaying the dead
+// token, never runs the refresh grant, and the untouched refresh token ages out.
+// That is how a single expired hour turns into a manual re-authorization.
+func TestInvalidBearerIsRejectedWithChallengeBeforeReachingHandlers(t *testing.T) {
+	const email, password = "person@example.com", "dummy-test-password"
+	o := newBearerTestServer(t, email, password)
+
+	for _, tc := range []struct{ name, header string }{
+		{"expired token", "Bearer " + o.testToken(t, email, time.Now().Add(-time.Minute))},
+		{"forged signature", "Bearer not.a.jwt"},
+		{"unknown subject", "Bearer " + o.testToken(t, "stranger@example.com", time.Now().Add(time.Hour))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reached := false
+			handler := requireBearer(o, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				reached = true
+			}))
+
+			req := httptest.NewRequest(http.MethodPost, "https://example.test/mcp", nil)
+			req.Header.Set("Authorization", tc.header)
+			rec := httptest.NewRecorder()
+			handler(rec, req)
+
+			if reached {
+				t.Fatal("request reached the MCP handler; the error would leave as HTTP 200 and no refresh would run")
+			}
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+			}
+			challenge := rec.Header().Get("WWW-Authenticate")
+			if !strings.Contains(challenge, `error="invalid_token"`) {
+				t.Fatalf("challenge %q carries no invalid_token error; clients key their refresh on it", challenge)
+			}
+			if !strings.Contains(challenge, `resource_metadata="https://example.test/.well-known/oauth-protected-resource"`) {
+				t.Fatalf("challenge %q does not point at the resource metadata", challenge)
+			}
+		})
+	}
+}
+
+// The guard must not become a second gate that locks out what used to work: a
+// valid token and CLI-style Basic auth both have to pass through.
+func TestRequireBearerPassesValidTokenAndBasicAuth(t *testing.T) {
+	const email, password = "person@example.com", "dummy-test-password"
+	o := newBearerTestServer(t, email, password)
+
+	basic := base64.StdEncoding.EncodeToString([]byte(email + ":" + password))
+	for _, tc := range []struct{ name, header string }{
+		{"valid token", "Bearer " + o.testToken(t, email, time.Now().Add(time.Hour))},
+		{"basic auth", "Basic " + basic},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reached := false
+			handler := requireBearer(o, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				reached = true
+			}))
+			req := httptest.NewRequest(http.MethodPost, "https://example.test/mcp", nil)
+			req.Header.Set("Authorization", tc.header)
+			handler(httptest.NewRecorder(), req)
+			if !reached {
+				t.Fatal("request was rejected but should have been served")
+			}
+		})
+	}
+}
+
+// Without an Authorization header the challenge stays a bare pointer to the
+// metadata: nothing was presented, so nothing can be invalid_token.
+func TestMissingAuthorizationGetsBareChallenge(t *testing.T) {
+	o := newBearerTestServer(t, "person@example.com", "dummy-test-password")
+	rec := httptest.NewRecorder()
+	requireBearer(o, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("unauthenticated request reached the MCP handler")
+	}))(rec, httptest.NewRequest(http.MethodPost, "https://example.test/mcp", nil))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	if challenge := rec.Header().Get("WWW-Authenticate"); strings.Contains(challenge, "error=") {
+		t.Fatalf("challenge %q reports an error although no token was presented", challenge)
+	}
+}
+
+// The error text lands inside a quoted-string, so it must not be able to carry
+// a quote or a newline out of the header.
+func TestChallengeReasonCannotBreakOutOfTheHeader(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeBearerChallenge(rec, "https://example.test", "bad\r\nX-Injected: 1 \"quote\"")
+	challenge := rec.Header().Get("WWW-Authenticate")
+	for _, forbidden := range []string{"\r", "\n", `"quote"`} {
+		if strings.Contains(challenge, forbidden) {
+			t.Fatalf("challenge %q still carries %q", challenge, forbidden)
+		}
+	}
+	if !strings.Contains(challenge, `resource_metadata=`) {
+		t.Fatalf("challenge %q lost its metadata pointer", challenge)
 	}
 }

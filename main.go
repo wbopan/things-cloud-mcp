@@ -1116,9 +1116,9 @@ func (um *UserManager) httpContextFunc(ctx context.Context, r *http.Request) con
 		return ctx
 	}
 
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		// Store raw token for JWT validation (implemented by OAuth task)
-		token := strings.TrimPrefix(authHeader, "Bearer ")
+	if token, ok := bearerToken(authHeader); ok {
+		// The token was already validated by requireBearer; handlers resolve it
+		// again to get at the credentials behind it.
 		return context.WithValue(ctx, userContextKey, &UserInfo{Token: token})
 	}
 
@@ -4564,17 +4564,9 @@ func main() {
 		streamServer.ServeHTTP(w, r)
 	})
 
-	// Wrap /mcp handler with 401 WWW-Authenticate for unauthenticated requests
-	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			base := getBaseURL(r)
-			w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+base+`/.well-known/oauth-protected-resource"`)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		streamServer.ServeHTTP(w, r)
-	})
+	// Missing, expired and invalid tokens all have to answer 401 with a
+	// WWW-Authenticate challenge — see requireBearer for why.
+	mux.HandleFunc("/mcp", requireBearer(oauth, streamServer))
 
 	// OAuth 2.1 routes (path-aware per RFC 9728: client appends resource path)
 	mux.HandleFunc("/.well-known/oauth-protected-resource", oauth.handleProtectedResourceMetadata)
