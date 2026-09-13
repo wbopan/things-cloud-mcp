@@ -20,6 +20,7 @@ Environment variables:
 - `JWT_SECRET`: base64 JWT signing key; generated when absent.
 - `CREDENTIALS_SECRET`: durable high-entropy secret used to derive the AES key for Things passwords at rest. When absent, the server creates `DATA_DIR/credentials.key` with mode `0600`.
 - `THINGS_DEBUG`: SDK debug logging.
+- `MCP_TIMEZONE`: IANA zone that defines the user's "today"; falls back to `TZ`, then UTC.
 
 ## Architecture and safety invariants
 
@@ -63,7 +64,7 @@ Use `errResult(msg)` for tool errors and `jsonResult(v)` for successful structur
 
 ## Wire format
 
-Writes use abbreviated fields such as `tt`, `nt`, `st`, `dd`, and `sb`. Notes require CRC32 metadata. Date-only schedule and deadline fields are timezone-agnostic. Recurrence uses template-plus-instance entities: templates hold `rr` and `icsd`; visible instances hold `rt` referencing the template. Recurrence templates must remain hidden from normal read-tool results.
+Writes use abbreviated fields such as `tt`, `nt`, `st`, `dd`, and `sb`. Notes require CRC32 metadata. Date-only schedule and deadline fields are timezone-agnostic. "Today" is the user's calendar date (`MCP_TIMEZONE`, then `TZ`, else UTC), anchored at UTC midnight by `userToday()`; compare stored dates on their UTC calendar day and never convert them into the user's zone, which shifts them to the previous day west of UTC. Recurrence uses template-plus-instance entities: templates hold `rr` and `icsd`; visible instances hold `rt` referencing the template. Recurrence templates must remain hidden from normal read-tool results.
 
 `parseDate()` accepts RFC3339 first and then `YYYY-MM-DD`. Date filters are exclusive. Output dates use ISO 8601 and omit zero-value years. User recurrence strings such as `daily`, `weekly:mon,wed`, `monthly:15`, and `every 3 days` are converted to the Things wire representation; weekly rules use the `wd` bitmask.
 

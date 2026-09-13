@@ -26,6 +26,8 @@ go build -o things-mcp .
 
 The server listens on port 8080 by default (set `PORT` to override). Optionally set `JWT_SECRET` for stable tokens across restarts. Things passwords stored for OAuth are encrypted with AES-GCM; set a durable high-entropy `CREDENTIALS_SECRET`, or persist the generated `DATA_DIR/credentials.key` alongside `oauth.db`. Refresh tokens are stored as hashes.
 
+**Timezone**: set `MCP_TIMEZONE` to your IANA zone (e.g. `Europe/Berlin`, `America/New_York`) so that "today", "tonight", and the Today-filter logic match your calendar instead of the server's UTC clock. Falls back to `TZ`, then UTC. Without this, users in non-UTC zones can see tasks land on the wrong day around midnight.
+
 - OAuth clients (Claude.ai, ChatGPT) authenticate via the built-in OAuth 2.1 flow
 - CLI clients (Claude Code, Cursor, Windsurf) use Basic auth headers
 
