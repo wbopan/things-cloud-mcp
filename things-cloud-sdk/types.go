@@ -62,6 +62,7 @@ var (
 	ItemKindTask      ItemKind = "Task6"
 	ItemKindTask4     ItemKind = "Task4"
 	ItemKindTask3     ItemKind = "Task3"
+	ItemKindTask2     ItemKind = "Task2"
 	ItemKindTaskPlain ItemKind = "Task"
 	// ItemKindArea identifies an Area
 	ItemKindArea      ItemKind = "Area2"
@@ -72,6 +73,7 @@ var (
 	// ItemKindTag identifies a Tag
 	ItemKindTag            ItemKind = "Tag3"
 	ItemKindTag4           ItemKind = "Tag4"
+	ItemKindTag2           ItemKind = "Tag2"
 	ItemKindTagPlain       ItemKind = "Tag"
 	// ItemKindTombstone is the current deletion-record kind.
 	ItemKindTombstone      ItemKind = "Tombstone2"

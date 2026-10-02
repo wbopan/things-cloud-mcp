@@ -151,12 +151,14 @@ func TestStateAllLegacyKindsUseMigratedKeys(t *testing.T) {
 	}{
 		{"Task4", things.ItemKindTask4, func(s *State, id string) bool { return s.Tasks[id] != nil }},
 		{"Task3", things.ItemKindTask3, func(s *State, id string) bool { return s.Tasks[id] != nil }},
+		{"Task2", things.ItemKindTask2, func(s *State, id string) bool { return s.Tasks[id] != nil }},
 		{"Task", things.ItemKindTaskPlain, func(s *State, id string) bool { return s.Tasks[id] != nil }},
 		{"ChecklistItem2", things.ItemKindChecklistItem2, func(s *State, id string) bool { return s.CheckListItems[id] != nil }},
 		{"ChecklistItem", things.ItemKindChecklistItem, func(s *State, id string) bool { return s.CheckListItems[id] != nil }},
 		{"Area2", things.ItemKindArea, func(s *State, id string) bool { return s.Areas[id] != nil }},
 		{"Area", things.ItemKindAreaPlain, func(s *State, id string) bool { return s.Areas[id] != nil }},
 		{"Tag3", things.ItemKindTag, func(s *State, id string) bool { return s.Tags[id] != nil }},
+		{"Tag2", things.ItemKindTag2, func(s *State, id string) bool { return s.Tags[id] != nil }},
 		{"Tag", things.ItemKindTagPlain, func(s *State, id string) bool { return s.Tags[id] != nil }},
 	}
 	for _, test := range tests {

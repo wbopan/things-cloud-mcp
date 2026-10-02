@@ -35,10 +35,10 @@ func NewState() *State {
 // records, so replay must normalize both object keys and relationship fields.
 func isLegacyItemKind(kind things.ItemKind) bool {
 	switch kind {
-	case things.ItemKindTask4, things.ItemKindTask3, things.ItemKindTaskPlain,
+	case things.ItemKindTask4, things.ItemKindTask3, things.ItemKindTask2, things.ItemKindTaskPlain,
 		things.ItemKindChecklistItem, things.ItemKindChecklistItem2,
 		things.ItemKindArea, things.ItemKindAreaPlain,
-		things.ItemKindTag, things.ItemKindTagPlain,
+		things.ItemKindTag, things.ItemKindTag2, things.ItemKindTagPlain,
 		things.ItemKindTombstonePlain:
 		return true
 	default:
@@ -304,13 +304,13 @@ func (s *State) Update(items ...things.Item) error {
 		}
 		var target any
 		switch rawItem.Kind {
-		case things.ItemKindTask, things.ItemKindTask4, things.ItemKindTask3, things.ItemKindTaskPlain:
+		case things.ItemKindTask, things.ItemKindTask4, things.ItemKindTask3, things.ItemKindTask2, things.ItemKindTaskPlain:
 			target = &things.TaskActionItemPayload{}
 		case things.ItemKindChecklistItem, things.ItemKindChecklistItem2, things.ItemKindChecklistItem3:
 			target = &things.CheckListActionItemPayload{}
 		case things.ItemKindArea, things.ItemKindArea3, things.ItemKindAreaPlain:
 			target = &things.AreaActionItemPayload{}
-		case things.ItemKindTag, things.ItemKindTag4, things.ItemKindTagPlain:
+		case things.ItemKindTag, things.ItemKindTag4, things.ItemKindTag2, things.ItemKindTagPlain:
 			target = &things.TagActionItemPayload{}
 		case things.ItemKindTombstone, things.ItemKindTombstonePlain:
 			target = &things.TombstoneActionItemPayload{}
@@ -331,7 +331,7 @@ func (s *State) Update(items ...things.Item) error {
 			rawItem.UUID = things.EncodeLegacyIdentifier(rawItem.UUID)
 		}
 		switch rawItem.Kind {
-		case things.ItemKindTask, things.ItemKindTask4, things.ItemKindTask3, things.ItemKindTaskPlain:
+		case things.ItemKindTask, things.ItemKindTask4, things.ItemKindTask3, things.ItemKindTask2, things.ItemKindTaskPlain:
 			item := things.TaskActionItem{Item: rawItem}
 			_ = json.Unmarshal(rawItem.P, &item.P)
 			if legacy {
@@ -386,7 +386,7 @@ func (s *State) Update(items ...things.Item) error {
 				// Unsupported action: skip
 			}
 
-		case things.ItemKindTag, things.ItemKindTag4, things.ItemKindTagPlain:
+		case things.ItemKindTag, things.ItemKindTag4, things.ItemKindTag2, things.ItemKindTagPlain:
 			item := things.TagActionItem{Item: rawItem}
 			_ = json.Unmarshal(rawItem.P, &item.P)
 			if legacy && item.P.ParentTagIDs != nil {
