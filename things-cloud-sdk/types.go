@@ -77,6 +77,13 @@ var (
 	ItemKindTombstone      ItemKind = "Tombstone2"
 	// ItemKindTombstonePlain is the legacy deletion-record kind found in older histories.
 	ItemKindTombstonePlain ItemKind = "Tombstone"
+	// ItemKindCommand is a Mail to Things queue entry: a forwarded email waiting
+	// for a Things client to turn it into an ordinary task. It uses legacy
+	// UUID-style identifiers and its payload carries the full email body.
+	ItemKindCommand ItemKind = "Command"
+	// ItemKindCommand3 is the current-generation queue entry kind. In observed
+	// histories it only appears as the deletion of a processed entry.
+	ItemKindCommand3 ItemKind = "Command3"
 )
 
 // IsSettingsKind reports whether kind is a versioned Things settings record.
@@ -95,6 +102,15 @@ func IsSettingsKind(kind ItemKind) bool {
 		}
 	}
 	return true
+}
+
+// IsCommandKind reports whether kind is a Mail to Things queue entry. The task
+// a client creates from an entry is synced as an ordinary Task item, and the
+// entry is then deleted, so queue entries carry no task-graph state. Unlike
+// IsSettingsKind this matches exact versions only: a future Command kind may
+// carry state, so it stays fail-closed until verified.
+func IsCommandKind(kind ItemKind) bool {
+	return kind == ItemKindCommand || kind == ItemKindCommand3
 }
 
 // Timestamp allows unix epochs represented as float or ints to be unmarshalled

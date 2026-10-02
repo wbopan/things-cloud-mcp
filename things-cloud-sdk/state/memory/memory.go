@@ -296,7 +296,7 @@ func (s *State) Update(items ...things.Item) error {
 	// skipping a future or malformed event would make the local state permanently
 	// incomplete, so updates are all-or-nothing with respect to decoding.
 	for _, rawItem := range items {
-		if things.IsSettingsKind(rawItem.Kind) {
+		if things.IsSettingsKind(rawItem.Kind) || things.IsCommandKind(rawItem.Kind) {
 			continue
 		}
 		if rawItem.Action != things.ItemActionCreated && rawItem.Action != things.ItemActionModified && rawItem.Action != things.ItemActionDeleted {
@@ -323,7 +323,7 @@ func (s *State) Update(items ...things.Item) error {
 	}
 
 	for _, rawItem := range items {
-		if things.IsSettingsKind(rawItem.Kind) {
+		if things.IsSettingsKind(rawItem.Kind) || things.IsCommandKind(rawItem.Kind) {
 			continue
 		}
 		legacy := isLegacyItemKind(rawItem.Kind)

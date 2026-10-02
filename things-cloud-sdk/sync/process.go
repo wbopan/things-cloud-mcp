@@ -64,6 +64,10 @@ func (s *Syncer) processItem(item things.Item, serverIndex int, ts time.Time) ([
 		// Versioned settings are account metadata, not task-graph entities.
 		return nil, nil
 	}
+	if things.IsCommandKind(item.Kind) {
+		// Mail to Things queue entries; the resulting task syncs separately.
+		return nil, nil
+	}
 	switch item.Kind {
 	case things.ItemKindTask, things.ItemKindTask4, things.ItemKindTask3, things.ItemKindTaskPlain:
 		return s.processTaskItem(item, serverIndex, ts)
