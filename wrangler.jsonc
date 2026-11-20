@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "things-mcp",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": true,
+  "routes": [{ "pattern": "thingscloudmcp.com", "custom_domain": true }],
+  // Landing, docs and how-it-works pages; /docs serves docs.html.
+  "assets": { "directory": "./public", "html_handling": "auto-trailing-slash" },
+  "d1_databases": [{ "binding": "DB", "database_name": "things-mcp", "migrations_dir": "migrations", "database_id": "63ee8259-9d8c-47bc-a54a-4624b0221bc1" }],
+  // One Durable Object per Things account: history cursor + task graph.
+  "durable_objects": { "bindings": [{ "name": "ACCOUNT", "class_name": "Account" }] },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Things"] },
+    { "tag": "v2", "deleted_classes": ["Things"], "new_sqlite_classes": ["Account"] }
+  ],
+  // A first sync of a large account parses its whole history.
+  "limits": { "cpu_ms": 300000 },
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 }
+  // Secrets: JWT_SECRET, CREDENTIALS_KEY (base64url AES-256 key for stored Things passwords).
+}

@@ -1,0 +1,1861 @@
+[
+  {
+    "annotations": {
+      "title": "Add checklist item",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "description": "Add a checklist item to an existing Things 3 task. Checklist items are sub-steps within a task. Returns {status: \"created\", uuid, task_uuid}. Use things_show_task to see existing checklist items.",
+    "inputSchema": {
+      "properties": {
+        "index": {
+          "description": "Sort position within the checklist (default 0, lower values appear first)",
+          "type": "number"
+        },
+        "task_uuid": {
+          "description": "UUID of the parent task to add the checklist item to",
+          "type": "string"
+        },
+        "title": {
+          "description": "Checklist item title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_uuid",
+        "title"
+      ],
+      "type": "object"
+    },
+    "name": "things_add_checklist_item",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task_uuid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "uuid"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Create area",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "description": "Create a new area in Things 3. Areas are top-level organizational containers (e.g. \"Work\", \"Personal\") that group projects and tasks. Returns {status: \"created\", uuid, name}.",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "description": "Area name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "things_create_area",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task_uuid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "uuid"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Create heading",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "description": "Create a new heading within a Things 3 project. Headings are section dividers used to group tasks inside a project. Returns {status: \"created\", uuid, title}.",
+    "inputSchema": {
+      "properties": {
+        "project_uuid": {
+          "description": "UUID of the active pending project to add the heading to. Completed, canceled, and trashed projects are rejected. Use things_find_projects to find project UUIDs.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Heading title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "project_uuid"
+      ],
+      "type": "object"
+    },
+    "name": "things_create_heading",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task_uuid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "uuid"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Create project",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "description": "Create a new project in Things 3. Projects are containers that hold tasks and headings. Returns {status: \"created\", uuid, title}. Defaults to Anytime schedule.",
+    "inputSchema": {
+      "properties": {
+        "area_uuid": {
+          "description": "UUID of the area to assign this project to. Use things_find_areas to find area UUIDs.",
+          "type": "string"
+        },
+        "deadline": {
+          "description": "Deadline date in YYYY-MM-DD format",
+          "type": "string"
+        },
+        "note": {
+          "description": "Markdown-compatible note or description for the project",
+          "type": "string"
+        },
+        "recurrence": {
+          "description": "Recurrence rule: daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days, every N weeks.",
+          "type": "string"
+        },
+        "reminder_date": {
+          "description": "Reminder date in YYYY-MM-DD format. Must be used together with reminder_time.",
+          "type": "string"
+        },
+        "reminder_time": {
+          "description": "Reminder time in HH:MM 24-hour format (e.g. 09:00, 14:30). Must be used together with reminder_date.",
+          "type": "string"
+        },
+        "schedule": {
+          "description": "When to schedule: today, anytime (default), someday, or a date (YYYY-MM-DD).",
+          "type": "string"
+        },
+        "tags": {
+          "description": "Comma-separated tag UUIDs to apply. Use things_find_tags to find tag UUIDs.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Project title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "name": "things_create_project",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task_uuid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "uuid"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Create tag",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "description": "Create a new tag in Things 3. Tags can be applied to tasks and projects for cross-cutting categorization. Tags support nesting via parent_uuid. Returns {status: \"created\", uuid, name}.",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "description": "Tag name",
+          "type": "string"
+        },
+        "parent_uuid": {
+          "description": "UUID of the parent tag for nesting. Use things_find_tags to find existing tag UUIDs.",
+          "type": "string"
+        },
+        "shorthand": {
+          "description": "Short abbreviation for the tag",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "things_create_tag",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task_uuid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "uuid"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Create task",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "description": "Create a new task in Things 3. Returns {status: \"created\", uuid, title}. The task is placed in Inbox by default; set schedule or project_uuid/area_uuid to organize it. Use things_find_projects and things_find_areas first to get valid UUIDs for assignment. When recurrence is set, an isRecurring flag appears in output.",
+    "inputSchema": {
+      "properties": {
+        "area_uuid": {
+          "description": "UUID of the area to assign this task to. Use things_find_areas to find area UUIDs.",
+          "type": "string"
+        },
+        "checklist": {
+          "description": "Comma-separated checklist item titles to create within the task",
+          "type": "string"
+        },
+        "deadline": {
+          "description": "Deadline date in YYYY-MM-DD format, or \"none\" to clear",
+          "type": "string"
+        },
+        "heading_uuid": {
+          "description": "UUID of an active heading inside an active pending project. Headings in completed, canceled, or trashed projects are rejected. Use things_find_headings to find heading UUIDs.",
+          "type": "string"
+        },
+        "note": {
+          "description": "Markdown-compatible note or description for the task",
+          "type": "string"
+        },
+        "project_uuid": {
+          "description": "UUID of the active pending project to add this task to. Completed, canceled, and trashed projects are rejected. Use things_find_projects to find project UUIDs.",
+          "type": "string"
+        },
+        "recurrence": {
+          "description": "Recurrence rule: daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days, every N weeks. Use \"none\" to clear.",
+          "type": "string"
+        },
+        "reminder_date": {
+          "description": "Reminder date in YYYY-MM-DD format. Must be used together with reminder_time.",
+          "type": "string"
+        },
+        "reminder_time": {
+          "description": "Reminder time in HH:MM 24-hour format (e.g. 09:00, 14:30). Must be used together with reminder_date.",
+          "type": "string"
+        },
+        "schedule": {
+          "description": "When to schedule: today, tonight (today's tonight), anytime, someday, inbox, or a date (YYYY-MM-DD). Dates go to Upcoming and auto-move to Today when due.",
+          "type": "string"
+        },
+        "tags": {
+          "description": "Comma-separated tag UUIDs to apply. Use things_find_tags to find tag UUIDs.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Task title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "name": "things_create_task",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task_uuid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "uuid"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Debug raw history",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "Show all raw wire-format fields of a task or project. Returns every field using Things Cloud's abbreviated keys (tt, tp, ss, st, sr, tir, dd, sp, cd, md, sb, ix, ti, do, tr, ar, pr, agr, tg, rt, dl, nt, ato). Useful for debugging sync issues or inspecting internal state. Accepts a UUID prefix.",
+    "inputSchema": {
+      "properties": {
+        "uuid": {
+          "description": "Task or project UUID, or unique prefix",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uuid"
+      ],
+      "type": "object"
+    },
+    "name": "things_debug_raw",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Delete area",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "Permanently delete an area from Things 3. Tasks and projects in this area will become unassigned. This action cannot be undone. Returns {status: \"deleted\", uuid}.",
+    "inputSchema": {
+      "properties": {
+        "confirm": {
+          "description": "Must be true to confirm permanent deletion",
+          "type": "boolean"
+        },
+        "uuid": {
+          "description": "UUID of the area to delete. Use things_find_areas to find area UUIDs.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uuid",
+        "confirm"
+      ],
+      "type": "object"
+    },
+    "name": "things_delete_area",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task_uuid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "uuid"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Delete checklist item",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "Permanently delete a checklist item from a Things 3 task. This action cannot be undone. Returns {status: \"deleted\", uuid}. Use things_show_task to find checklist item UUIDs.",
+    "inputSchema": {
+      "properties": {
+        "confirm": {
+          "description": "Must be true to confirm permanent deletion",
+          "type": "boolean"
+        },
+        "uuid": {
+          "description": "UUID of the checklist item to delete. Use things_show_task to find checklist item UUIDs.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uuid",
+        "confirm"
+      ],
+      "type": "object"
+    },
+    "name": "things_delete_checklist_item",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task_uuid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "uuid"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Delete tag",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "Permanently delete a tag from Things 3. The tag will be removed from all tasks and projects that use it. This action cannot be undone. Returns {status: \"deleted\", uuid}.",
+    "inputSchema": {
+      "properties": {
+        "confirm": {
+          "description": "Must be true to confirm permanent deletion",
+          "type": "boolean"
+        },
+        "uuid": {
+          "description": "UUID of the tag to delete. Use things_find_tags to find tag UUIDs.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uuid",
+        "confirm"
+      ],
+      "type": "object"
+    },
+    "name": "things_delete_tag",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task_uuid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "uuid"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Diagnose sync",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "Run a full diagnostic of the Things Cloud sync pipeline. Tests credentials, fetches history, paginates through all items, rebuilds state, checks data integrity, and runs query tests. Returns a detailed step-by-step report with logs, timing, and any warnings or errors. Use this to debug sync issues like missing or stale tasks.",
+    "inputSchema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "things_diagnose",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "errors": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "shareUrl": {
+              "type": "string"
+            },
+            "steps": {
+              "type": "array"
+            },
+            "summary": {
+              "type": "object"
+            },
+            "warnings": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "steps",
+            "summary",
+            "warnings",
+            "errors"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Edit area",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "Rename an existing area in Things 3. Returns {status: \"updated\", uuid}.",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "description": "New area name",
+          "type": "string"
+        },
+        "uuid": {
+          "description": "UUID of the area to rename. Use things_find_areas to find area UUIDs.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uuid",
+        "name"
+      ],
+      "type": "object"
+    },
+    "name": "things_edit_area",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task_uuid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "uuid"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Edit checklist item",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "Edit an existing checklist item in Things 3. Only provided fields are updated; omitted fields remain unchanged. Returns {status: \"updated\", uuid}. Use things_show_task to find checklist item UUIDs.",
+    "inputSchema": {
+      "properties": {
+        "completed": {
+          "description": "Set true to mark as completed, false to mark as pending",
+          "type": "boolean"
+        },
+        "index": {
+          "description": "New sort position within the checklist",
+          "type": "number"
+        },
+        "title": {
+          "description": "New checklist item title",
+          "type": "string"
+        },
+        "uuid": {
+          "description": "UUID of the checklist item to edit. Use things_show_task to find checklist item UUIDs.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uuid"
+      ],
+      "type": "object"
+    },
+    "name": "things_edit_checklist_item",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task_uuid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "uuid"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Edit task or project",
+      "readOnlyHint": false,
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": false
+    },
+    "description": "Edit an existing task or project in Things 3. Only provided fields are updated; omitted fields remain unchanged. Can also change status to complete, cancel, trash, or restore items. Completing a recurring task completes only the current instance; the next instance appears automatically. Set recurrence=none to permanently stop a recurring task. Returns {status: \"updated\", uuid}.",
+    "inputSchema": {
+      "properties": {
+        "area_uuid": {
+          "description": "UUID of the area to assign to. Use things_find_areas to find area UUIDs.",
+          "type": "string"
+        },
+        "confirm_destructive": {
+          "description": "Must be true when recurrence=none to confirm permanently stopping future occurrences",
+          "type": "boolean"
+        },
+        "deadline": {
+          "description": "Deadline date in YYYY-MM-DD format",
+          "type": "string"
+        },
+        "heading_uuid": {
+          "description": "UUID of an active heading inside an active pending project. Headings in completed, canceled, or trashed projects are rejected. Use things_find_headings to find heading UUIDs.",
+          "type": "string"
+        },
+        "note": {
+          "description": "New note content (replaces existing note; empty string clears it)",
+          "type": "string"
+        },
+        "project_uuid": {
+          "description": "UUID of the active pending project to move to. Completed, canceled, and trashed projects are rejected. Use things_find_projects to find project UUIDs.",
+          "type": "string"
+        },
+        "recurrence": {
+          "description": "Recurrence rule: daily, weekly, weekly:mon,wed, monthly, monthly:15, monthly:last, yearly, every N days, every N weeks. Use \"none\" to clear.",
+          "type": "string"
+        },
+        "reminder_date": {
+          "description": "Reminder date in YYYY-MM-DD format, or \"none\" to clear. Must be used together with reminder_time.",
+          "type": "string"
+        },
+        "reminder_time": {
+          "description": "Reminder time in HH:MM 24-hour format (e.g. 09:00, 14:30). Must be used together with reminder_date.",
+          "type": "string"
+        },
+        "schedule": {
+          "description": "When to schedule: today, tonight (today's tonight), anytime, someday, inbox, or a date (YYYY-MM-DD). Dates go to Upcoming and auto-move to Today when due.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Set item status: pending, completed, canceled, trashed (move to trash), restored (restore from trash)",
+          "enum": [
+            "pending",
+            "completed",
+            "canceled",
+            "trashed",
+            "restored"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "description": "Comma-separated tag UUIDs (replaces all existing tags; empty string clears them). Use things_find_tags to find tag UUIDs.",
+          "type": "string"
+        },
+        "title": {
+          "description": "New title",
+          "type": "string"
+        },
+        "uuid": {
+          "description": "UUID of the task or project to edit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uuid"
+      ],
+      "type": "object"
+    },
+    "name": "things_edit_item",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task_uuid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "uuid"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Edit tag",
+      "readOnlyHint": false,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "Edit an existing tag in Things 3. Only provided fields are updated; omitted fields remain unchanged. Returns {status: \"updated\", uuid}.",
+    "inputSchema": {
+      "properties": {
+        "name": {
+          "description": "New tag name",
+          "type": "string"
+        },
+        "parent_uuid": {
+          "description": "UUID of the new parent tag for nesting. Use things_find_tags to find tag UUIDs.",
+          "type": "string"
+        },
+        "shorthand": {
+          "description": "New short abbreviation for the tag",
+          "type": "string"
+        },
+        "uuid": {
+          "description": "UUID of the tag to edit. Use things_find_tags to find tag UUIDs.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uuid"
+      ],
+      "type": "object"
+    },
+    "name": "things_edit_tag",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "task_uuid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "uuid"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Find areas",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "List all areas in Things 3. Areas are top-level organizational containers for projects and tasks. Returns an array of area objects, each containing uuid and title.",
+    "inputSchema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "things_find_areas",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "items": {
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "uuid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "uuid",
+              "title"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Find headings",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "List all headings within a Things 3 project. Returns an array of heading objects, each containing uuid and title. Use things_show_project to also see the tasks grouped under each heading. Use things_find_projects to find the project UUID.",
+    "inputSchema": {
+      "properties": {
+        "project_uuid": {
+          "description": "UUID of the project to list headings from",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_uuid"
+      ],
+      "type": "object"
+    },
+    "name": "things_find_headings",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "items": {
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "uuid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "uuid",
+              "title"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Find projects",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "List projects from Things 3 with optional filters. Returns an array of project objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/tonight/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, areas, tags. Use things_show_project to see full details including headings and child tasks. Default: only pending (active) projects. Use status parameter to query completed or canceled projects.",
+    "inputSchema": {
+      "properties": {
+        "area": {
+          "description": "Filter by area name (case-insensitive)",
+          "type": "string"
+        },
+        "contains_text": {
+          "description": "Filter projects whose title or note contains this text (case-insensitive)",
+          "type": "string"
+        },
+        "created_after": {
+          "description": "Return projects created after this date/time (YYYY-MM-DD or RFC3339 e.g. 2025-03-01T00:00:00+08:00, exclusive)",
+          "type": "string"
+        },
+        "created_before": {
+          "description": "Return projects created before this date/time (YYYY-MM-DD or RFC3339 e.g. 2025-03-01T00:00:00+08:00, exclusive)",
+          "type": "string"
+        },
+        "deadline_after": {
+          "description": "Return projects with deadline after this date (YYYY-MM-DD, exclusive)",
+          "type": "string"
+        },
+        "deadline_before": {
+          "description": "Return projects with deadline before this date (YYYY-MM-DD, exclusive)",
+          "type": "string"
+        },
+        "in_trash": {
+          "description": "When true, include trashed items in results (default false)",
+          "type": "boolean"
+        },
+        "schedule": {
+          "description": "Filter by schedule",
+          "enum": [
+            "inbox",
+            "today",
+            "tonight",
+            "anytime",
+            "someday",
+            "upcoming"
+          ],
+          "type": "string"
+        },
+        "scheduled_after": {
+          "description": "Return projects scheduled after this date (YYYY-MM-DD, exclusive)",
+          "type": "string"
+        },
+        "scheduled_before": {
+          "description": "Return projects scheduled before this date (YYYY-MM-DD, exclusive)",
+          "type": "string"
+        },
+        "status": {
+          "description": "Filter by project status (default: pending — only active projects)",
+          "enum": [
+            "pending",
+            "completed",
+            "canceled"
+          ],
+          "type": "string"
+        },
+        "tag": {
+          "description": "Filter by tag name (case-insensitive)",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "name": "things_find_projects",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "items": {
+            "properties": {
+              "areas": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "checklist": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "completionDate": {
+                "type": "string"
+              },
+              "creationDate": {
+                "type": "string"
+              },
+              "deadlineDate": {
+                "type": "string"
+              },
+              "isRecurring": {
+                "type": "boolean"
+              },
+              "materialized": {
+                "type": "boolean"
+              },
+              "modificationDate": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "project": {
+                "type": "object"
+              },
+              "reminderTime": {
+                "type": "string"
+              },
+              "schedule": {
+                "type": "string"
+              },
+              "scheduledDate": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "title": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "uuid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "uuid",
+              "type",
+              "title",
+              "status",
+              "schedule",
+              "isRecurring"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Find tags",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "List all tags in Things 3. Returns an array of tag objects, each containing uuid, title, and optional fields: shorthand (abbreviation) and parentIds (for nested tags).",
+    "inputSchema": {
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "things_find_tags",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "items": {
+            "properties": {
+              "parentIds": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "shorthand": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "uuid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "uuid",
+              "title"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Find tasks",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "List tasks from Things 3 with optional filters. Returns an array of task objects, each containing uuid, title, status (pending/completed/canceled), schedule (inbox/today/tonight/anytime/someday/upcoming), and optional fields: note, scheduledDate, deadlineDate, reminderTime, recurrence, areas, project, tags. Use things_show_task to see full details including checklist items. Default: only active pending tasks; pending descendants of completed, canceled, or trashed containers are excluded to match Things app visibility. Use status parameter to query completed or canceled tasks. Note: schedule=today includes both regular and tonight tasks; use schedule=tonight to filter only tonight tasks. Recurring to-dos whose current occurrence was completed appear as their projected next occurrence with materialized:false; such items cannot be completed or edited until Things creates the real occurrence on next app sync.",
+    "inputSchema": {
+      "properties": {
+        "area": {
+          "description": "Filter by area name (case-insensitive)",
+          "type": "string"
+        },
+        "contains_text": {
+          "description": "Filter tasks whose title or note contains this text (case-insensitive)",
+          "type": "string"
+        },
+        "created_after": {
+          "description": "Return tasks created after this date/time (YYYY-MM-DD or RFC3339 e.g. 2025-03-01T00:00:00+08:00, exclusive)",
+          "type": "string"
+        },
+        "created_before": {
+          "description": "Return tasks created before this date/time (YYYY-MM-DD or RFC3339 e.g. 2025-03-01T00:00:00+08:00, exclusive)",
+          "type": "string"
+        },
+        "deadline_after": {
+          "description": "Return tasks with deadline after this date (YYYY-MM-DD, exclusive)",
+          "type": "string"
+        },
+        "deadline_before": {
+          "description": "Return tasks with deadline before this date (YYYY-MM-DD, exclusive)",
+          "type": "string"
+        },
+        "in_trash": {
+          "description": "When true, include trashed items in results (default false)",
+          "type": "boolean"
+        },
+        "project": {
+          "description": "Filter by project name (case-insensitive)",
+          "type": "string"
+        },
+        "schedule": {
+          "description": "Filter by schedule",
+          "enum": [
+            "inbox",
+            "today",
+            "tonight",
+            "anytime",
+            "someday",
+            "upcoming"
+          ],
+          "type": "string"
+        },
+        "scheduled_after": {
+          "description": "Return tasks scheduled after this date (YYYY-MM-DD, exclusive)",
+          "type": "string"
+        },
+        "scheduled_before": {
+          "description": "Return tasks scheduled before this date (YYYY-MM-DD, exclusive)",
+          "type": "string"
+        },
+        "status": {
+          "description": "Filter by task status (default: pending — only active tasks)",
+          "enum": [
+            "pending",
+            "completed",
+            "canceled"
+          ],
+          "type": "string"
+        },
+        "tag": {
+          "description": "Filter by tag name (case-insensitive)",
+          "type": "string"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "name": "things_find_tasks",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "items": {
+            "properties": {
+              "areas": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "checklist": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "completionDate": {
+                "type": "string"
+              },
+              "creationDate": {
+                "type": "string"
+              },
+              "deadlineDate": {
+                "type": "string"
+              },
+              "isRecurring": {
+                "type": "boolean"
+              },
+              "materialized": {
+                "type": "boolean"
+              },
+              "modificationDate": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "project": {
+                "type": "object"
+              },
+              "reminderTime": {
+                "type": "string"
+              },
+              "schedule": {
+                "type": "string"
+              },
+              "scheduledDate": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "title": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "uuid": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "uuid",
+              "type",
+              "title",
+              "status",
+              "schedule",
+              "isRecurring"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Overview",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "Returns a comprehensive snapshot of the user's active task landscape in a single call. Includes all tags, the active area-to-project hierarchy (with IDs), today's active items (tasks and projects), and active upcoming scheduled/due items within a configurable lookahead window. Descendants of completed, canceled, or trashed containers are excluded to match Things app visibility. Each item has a type field ('task' or 'project') to distinguish them. Use this as the first call in a session to orient yourself before drilling into specific tasks or projects. Recurring to-dos whose current occurrence was completed appear as their projected next occurrence with materialized:false; such items cannot be completed or edited until Things creates the real occurrence.",
+    "inputSchema": {
+      "properties": {
+        "lookahead_days": {
+          "description": "Number of days ahead to scan for upcoming scheduled or due tasks. Tasks within (today, today+N] are included. Default: 7",
+          "type": "number"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "name": "things_overview",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "areas": {
+              "type": "array"
+            },
+            "tags": {
+              "type": "array"
+            },
+            "todayTasks": {
+              "items": {
+                "properties": {
+                  "areas": {
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "checklist": {
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "completionDate": {
+                    "type": "string"
+                  },
+                  "creationDate": {
+                    "type": "string"
+                  },
+                  "deadlineDate": {
+                    "type": "string"
+                  },
+                  "isRecurring": {
+                    "type": "boolean"
+                  },
+                  "materialized": {
+                    "type": "boolean"
+                  },
+                  "modificationDate": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "project": {
+                    "type": "object"
+                  },
+                  "reminderTime": {
+                    "type": "string"
+                  },
+                  "schedule": {
+                    "type": "string"
+                  },
+                  "scheduledDate": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "uuid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uuid",
+                  "type",
+                  "title",
+                  "status",
+                  "schedule",
+                  "isRecurring"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "upcomingTasks": {
+              "items": {
+                "properties": {
+                  "areas": {
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "checklist": {
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "completionDate": {
+                    "type": "string"
+                  },
+                  "creationDate": {
+                    "type": "string"
+                  },
+                  "deadlineDate": {
+                    "type": "string"
+                  },
+                  "isRecurring": {
+                    "type": "boolean"
+                  },
+                  "materialized": {
+                    "type": "boolean"
+                  },
+                  "modificationDate": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "project": {
+                    "type": "object"
+                  },
+                  "reminderTime": {
+                    "type": "string"
+                  },
+                  "schedule": {
+                    "type": "string"
+                  },
+                  "scheduledDate": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "uuid": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uuid",
+                  "type",
+                  "title",
+                  "status",
+                  "schedule",
+                  "isRecurring"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "tags",
+            "areas",
+            "todayTasks",
+            "upcomingTasks"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Show project",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "Show full details of a Things 3 project, including its headings and tasks grouped by heading. Returns the project info plus a headings array (each with uuid, title, and nested tasks) and an unfiledTasks array for tasks not under any heading. Use things_find_projects to search for projects and obtain UUIDs.",
+    "inputSchema": {
+      "properties": {
+        "status": {
+          "description": "Filter child tasks by their own status (default: pending; a completed project's pending children remain inspectable here)",
+          "enum": [
+            "pending",
+            "completed",
+            "canceled"
+          ],
+          "type": "string"
+        },
+        "uuid": {
+          "description": "Project UUID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uuid"
+      ],
+      "type": "object"
+    },
+    "name": "things_show_project",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "annotations": {
+      "title": "Show task",
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "description": "Show full details of a single Things 3 task, including its checklist items. Returns a task object with uuid, title, status, schedule, note, dates, areas, project, tags, and a checklist array (each with uuid, title, status). Accepts a UUID prefix for convenience. Use things_find_tasks to search for tasks and obtain UUIDs.",
+    "inputSchema": {
+      "properties": {
+        "uuid": {
+          "description": "Task UUID or unique prefix of the UUID",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uuid"
+      ],
+      "type": "object"
+    },
+    "name": "things_show_task",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "properties": {
+            "areas": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "checklist": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "completionDate": {
+              "type": "string"
+            },
+            "creationDate": {
+              "type": "string"
+            },
+            "deadlineDate": {
+              "type": "string"
+            },
+            "isRecurring": {
+              "type": "boolean"
+            },
+            "materialized": {
+              "type": "boolean"
+            },
+            "modificationDate": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            },
+            "project": {
+              "type": "object"
+            },
+            "reminderTime": {
+              "type": "string"
+            },
+            "schedule": {
+              "type": "string"
+            },
+            "scheduledDate": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "tags": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string"
+            },
+            "uuid": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "uuid",
+            "type",
+            "title",
+            "status",
+            "schedule",
+            "isRecurring"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    }
+  }
+]
