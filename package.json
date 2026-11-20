@@ -1,0 +1,16 @@
+{
+  "name": "things-mcp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler d1 migrations apply things-mcp --remote && wrangler deploy",
+    "check": "tsc --noEmit && esbuild test/*.test.ts --bundle --platform=node --format=esm --outdir=.test --log-level=warning && node --test .test/*.js",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261113.1",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.162.0",
+    "esbuild": "^0.28.2"
+  }
+}

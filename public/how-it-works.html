@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon.ico">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<title>How it Works - Things Cloud MCP</title>
+<meta name="description" content="Learn how Things Cloud MCP connects your AI assistant to Things 3 from anywhere by talking directly to Things Cloud, the sync service behind your Apple devices.">
+<link rel="canonical" href="https://thingscloudmcp.com/how-it-works">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Things Cloud MCP">
+<meta property="og:title" content="How it Works - Things Cloud MCP">
+<meta property="og:description" content="Learn how Things Cloud MCP connects your AI assistant to Things 3 from anywhere by talking directly to Things Cloud.">
+<meta property="og:url" content="https://thingscloudmcp.com/how-it-works">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="How it Works - Things Cloud MCP">
+<meta name="twitter:description" content="Learn how Things Cloud MCP connects your AI assistant to Things 3 from anywhere by talking directly to Things Cloud.">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --blue:#1A7CF9;
+  --blue-hover:#0A6CE9;
+  --bg:#FFFFFF;
+  --bg-alt:#F7F7F7;
+  --text:#1C1C1E;
+  --text-secondary:#8E8E93;
+  --green:#34C759;
+  --surface:#FFFFFF;
+  --shadow:0 0.5px 1px rgba(0,0,0,0.05);
+  --divider:#E5E5EA;
+  --code-bg:#F2F2F7;
+  --radius:12px;
+  --radius-sm:8px;
+}
+
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#1C1C1E;
+    --bg-alt:#2C2C2E;
+    --text:#F2F2F7;
+    --text-secondary:#8E8E93;
+    --surface:#2C2C2E;
+    --shadow:0 0.5px 1px rgba(0,0,0,0.15);
+    --divider:#3A3A3C;
+    --code-bg:#3A3A3C;
+  }
+}
+
+html{scroll-behavior:smooth}
+
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  color:var(--text);
+  background:var(--bg);
+  line-height:1.6;
+  font-size:16px;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+
+.container{max-width:960px;margin:0 auto;padding:0 24px}
+
+/* -- Header -- */
+header{
+  border-bottom:1px solid var(--divider);
+  padding:20px 0;
+  position:sticky;
+  top:0;
+  z-index:100;
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  background:rgba(255,255,255,0.85);
+}
+@media(prefers-color-scheme:dark){
+  header{background:rgba(28,28,30,0.85)}
+}
+.header-inner{
+  display:flex;
+  align-items:center;
+  gap:14px;
+}
+.logo{
+  width:40px;height:40px;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.logo svg{width:40px;height:40px}
+.header-text h1{
+  font-size:20px;
+  font-weight:700;
+  letter-spacing:-0.3px;
+  color:var(--text);
+}
+.header-text{flex:1}
+.github-link{
+  display:flex;align-items:center;justify-content:center;
+  color:var(--text-secondary);
+  transition:color 0.15s;
+}
+.github-link:hover{color:var(--text)}
+.github-link svg{width:24px;height:24px}
+
+/* -- Hero -- */
+.hero{
+  padding:80px 0 64px;
+  text-align:center;
+}
+.hero-icon{
+  width:80px;height:80px;
+  display:inline-flex;align-items:center;justify-content:center;
+  margin-bottom:28px;
+}
+.hero-icon svg{width:80px;height:80px}
+.hero h2{
+  font-size:40px;
+  font-weight:700;
+  letter-spacing:-0.8px;
+  margin-bottom:16px;
+  line-height:1.15;
+}
+.hero h2 .brand{
+  color:var(--blue);
+}
+.hero p{
+  font-size:18px;
+  color:var(--text-secondary);
+  max-width:540px;
+  margin:0 auto 24px;
+  line-height:1.55;
+}
+/* -- Header right-side items -- */
+.header-right{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-left:auto;
+}
+.header-status{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+  font-weight:400;
+  color:var(--text-secondary);
+}
+.header-status .dot{
+  width:6px;height:6px;
+  border-radius:50%;
+  background:var(--green);
+  flex-shrink:0;
+}
+.header-divider{
+  color:var(--divider);
+  font-size:13px;
+  font-weight:300;
+  user-select:none;
+}
+.header-doc-link{
+  font-size:13px;
+  font-weight:400;
+  color:var(--text-secondary);
+  text-decoration:none;
+}
+.header-doc-link:hover{color:var(--blue)}
+
+/* -- Section shared -- */
+section{padding:64px 0}
+section.alt{background:var(--bg-alt)}
+.section-title{
+  font-size:28px;
+  font-weight:700;
+  letter-spacing:-0.5px;
+  margin-bottom:8px;
+}
+.section-desc{
+  color:var(--text-secondary);
+  font-size:15px;
+  margin-bottom:36px;
+  max-width:560px;
+}
+.section-header{margin-bottom:36px}
+
+/* -- Connection -- */
+.connect-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:24px;
+}
+@media(max-width:640px){
+  .connect-grid{grid-template-columns:1fr}
+}
+.connect-card{
+  background:var(--surface);
+  border-radius:var(--radius);
+  padding:24px;
+  border:1px solid var(--divider);
+}
+.connect-card h3{
+  font-size:15px;
+  font-weight:600;
+  margin-bottom:16px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.connect-card h3 .num{
+  width:22px;height:22px;
+  background:var(--blue);
+  color:#fff;
+  border-radius:50%;
+  display:inline-flex;
+  align-items:center;justify-content:center;
+  font-size:12px;
+  font-weight:700;
+  flex-shrink:0;
+}
+pre{
+  background:var(--code-bg);
+  border-radius:var(--radius-sm);
+  padding:16px;
+  font-size:13px;
+  line-height:1.6;
+  overflow-x:auto;
+  font-family:"SF Mono",SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  color:var(--text);
+}
+.env-list{list-style:none;padding:0}
+.env-list li{
+  padding:10px 0;
+  border-bottom:1px solid var(--divider);
+  display:flex;
+  gap:12px;
+  align-items:baseline;
+  font-size:14px;
+}
+.env-list li:last-child{border-bottom:none}
+.env-var{
+  font-family:"SF Mono",SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  font-weight:600;
+  font-size:13px;
+  color:var(--blue);
+  flex-shrink:0;
+}
+.env-desc{
+  color:var(--text-secondary);
+  font-size:13px;
+}
+
+/* -- Client Selector Dropdown -- */
+.client-selector-wrapper{
+  position:relative;
+  display:inline-block;
+}
+.client-selector-trigger{
+  color:var(--blue);
+  cursor:pointer;
+  font-weight:700;
+  font-size:inherit;
+  letter-spacing:inherit;
+  user-select:none;
+  -webkit-user-select:none;
+  display:inline-flex;
+  align-items:center;
+  vertical-align:-6px;
+  gap:6px;
+}
+.client-selector-trigger svg{
+  width:32px;height:32px;
+}
+.client-selector-trigger:hover{
+  color:var(--blue-hover);
+}
+.client-dropdown{
+  display:none;
+  position:absolute;
+  top:calc(100% + 6px);
+  left:50%;
+  transform:translateX(-50%);
+  min-width:200px;
+  background:var(--surface);
+  border:1px solid var(--divider);
+  border-radius:var(--radius-sm);
+  box-shadow:0 4px 16px rgba(0,0,0,0.08);
+  z-index:200;
+  overflow:hidden;
+}
+@media(prefers-color-scheme:dark){
+  .client-dropdown{
+    box-shadow:0 4px 16px rgba(0,0,0,0.25);
+  }
+}
+.client-dropdown.open{
+  display:block;
+}
+.client-dropdown-item{
+  padding:10px 16px;
+  font-size:15px;
+  font-weight:500;
+  color:var(--text);
+  cursor:pointer;
+  transition:background 0.15s;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  width:100%;
+}
+.client-dropdown-item svg{
+  flex-shrink:0;
+}
+#clientLabel,#docsClientLabel{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
+#clientLabel svg,#docsClientLabel svg{
+  flex-shrink:0;
+  position:relative;
+  top:1px;
+}
+.client-dropdown-item:hover{
+  background:var(--bg-alt);
+}
+.client-dropdown-item.active{
+  color:var(--blue);
+}
+.client-instructions-container{
+  background:var(--surface);
+  border-radius:var(--radius);
+  padding:28px 24px;
+  border:1px solid var(--divider);
+}
+.client-instructions{
+  display:none;
+}
+.client-instructions.active{
+  display:block;
+}
+.client-instructions .step{
+  display:flex;
+  gap:12px;
+  margin-bottom:18px;
+  align-items:flex-start;
+  font-size:15px;
+  line-height:1.6;
+}
+.client-instructions .step:last-child{
+  margin-bottom:0;
+}
+.client-instructions .step .num{
+  width:22px;height:22px;
+  min-width:22px;
+  background:var(--blue);
+  color:#fff;
+  border-radius:50%;
+  display:inline-flex;
+  align-items:center;justify-content:center;
+  font-size:12px;
+  font-weight:700;
+  flex-shrink:0;
+  margin-top:2px;
+}
+.client-instructions .step-text{
+  flex:1;
+}
+.client-instructions .step-text strong{
+  font-weight:600;
+}
+.client-instructions pre{
+  margin-top:12px;
+  margin-bottom:12px;
+}
+.client-instructions .note{
+  font-size:13px;
+  color:var(--text-secondary);
+  margin-top:12px;
+  line-height:1.55;
+}
+
+/* -- Footer -- */
+footer{
+  padding:32px 0;
+  border-top:1px solid var(--divider);
+  text-align:center;
+}
+footer p{
+  font-size:13px;
+  color:var(--text-secondary);
+}
+footer a{
+  color:var(--blue);
+  text-decoration:none;
+}
+footer a:hover{text-decoration:underline}
+
+/* -- Animations -- */
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(16px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.fade-in{
+  animation:fadeUp 0.5s ease both;
+}
+.fade-in.d1{animation-delay:0.05s}
+.fade-in.d2{animation-delay:0.1s}
+.fade-in.d3{animation-delay:0.15s}
+.fade-in.d4{animation-delay:0.2s}
+
+/* -- Responsive -- */
+@media(max-width:600px){
+  .hero{padding:48px 0 40px}
+  .hero h2{font-size:28px}
+  .hero p{font-size:16px}
+  .section-title{font-size:22px}
+}
+
+
+/* -- How it Works page styles -- */
+.hiw-nav{
+  padding:24px 0 0;
+}
+.hiw-nav a{
+  color:var(--blue);
+  text-decoration:none;
+  font-size:14px;
+  font-weight:500;
+}
+.hiw-nav a:hover{text-decoration:underline}
+
+.hiw-hero{
+  padding:48px 0 40px;
+}
+.hiw-hero h2{
+  font-size:32px;
+  font-weight:700;
+  letter-spacing:-0.5px;
+  margin-bottom:8px;
+}
+.hiw-hero p{
+  font-size:16px;
+  color:var(--text-secondary);
+  max-width:540px;
+  line-height:1.55;
+}
+
+.hiw-section{
+  padding:0 0 48px;
+}
+.hiw-section:last-of-type{
+  padding-bottom:64px;
+}
+.hiw-section .section-title{
+  margin-bottom:16px;
+}
+.hiw-section p{
+  font-size:15px;
+  color:var(--text-secondary);
+  line-height:1.7;
+  margin-bottom:12px;
+  max-width:680px;
+}
+.hiw-section p:last-child{
+  margin-bottom:0;
+}
+.hiw-section p strong{
+  color:var(--text);
+  font-weight:600;
+}
+
+/* -- Warning box -- */
+.warning-box{
+  border-left:4px solid #F5A623;
+  background:#FFF8EB;
+  border-radius:var(--radius-sm);
+  padding:20px 24px;
+  margin-top:8px;
+}
+@media(prefers-color-scheme:dark){
+  .warning-box{
+    background:#3A3520;
+    border-left-color:#F5A623;
+  }
+}
+.warning-box .warning-title{
+  font-size:15px;
+  font-weight:700;
+  color:var(--text);
+  margin-bottom:10px;
+}
+.warning-box p{
+  font-size:14px;
+  color:var(--text-secondary);
+  line-height:1.65;
+  margin-bottom:8px;
+}
+.warning-box p:last-child{
+  margin-bottom:0;
+}
+
+/* -- Architecture diagram -- */
+.arch-diagram{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:0;
+  padding:32px 0;
+  max-width:420px;
+  margin:0 auto;
+}
+.arch-box{
+  width:100%;
+  text-align:center;
+  padding:16px 20px;
+  border:1px solid var(--divider);
+  border-radius:var(--radius-sm);
+  background:var(--surface);
+  font-size:14px;
+  font-weight:500;
+  color:var(--text);
+  line-height:1.4;
+}
+.arch-box .arch-sub{
+  display:block;
+  font-size:12px;
+  font-weight:400;
+  color:var(--text-secondary);
+  margin-top:2px;
+}
+.arch-box.highlight{
+  border-color:var(--blue);
+  background:var(--bg-alt);
+}
+.arch-arrow{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:0;
+  padding:6px 0;
+  color:var(--text-secondary);
+  font-size:12px;
+  line-height:1.3;
+}
+.arch-arrow-icon{
+  font-size:18px;
+  line-height:1;
+  color:var(--text-secondary);
+}
+.arch-arrow-label{
+  font-size:11px;
+  font-weight:500;
+  color:var(--text-secondary);
+  letter-spacing:0.3px;
+}
+
+/* -- Capabilities list -- */
+.cap-list{
+  list-style:none;
+  padding:0;
+  margin:0;
+}
+.cap-list li{
+  padding:8px 0;
+  border-bottom:1px solid var(--divider);
+  font-size:14px;
+  color:var(--text);
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.cap-list li:last-child{
+  border-bottom:none;
+}
+.cap-dot{
+  width:6px;height:6px;
+  border-radius:50%;
+  background:var(--blue);
+  flex-shrink:0;
+}
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="container header-inner">
+    <div class="logo"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="40" height="40" fill="none">
+  <path d="M50 46a11 11 0 0 0 0-22 11 11 0 0 0-1-.04 15 15 0 0 0-29-2A13 13 0 0 0 14 46h36z" fill="#1A7CF9"/>
+  <polyline points="24,34 30,40 42,28" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg></div>
+    <div class="header-text">
+      <h1>Things Cloud MCP</h1>
+    </div>
+    <nav class="header-right" aria-label="Main navigation">
+      <span class="header-status"><span class="dot"></span> Online</span>
+      <span class="header-divider">|</span>
+      <a class="header-doc-link" href="/how-it-works">How it Works</a>
+      <span class="header-divider">|</span>
+      <a class="header-doc-link" href="/docs">Documentation</a>
+      <span class="header-divider">|</span>
+      <a class="github-link" href="https://github.com/wbopan/things-cloud-mcp" target="_blank" rel="noopener" title="GitHub"><svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></a>
+    </nav>
+  </div>
+</header>
+
+<div class="container">
+
+<!-- Back nav -->
+<div class="hiw-nav">
+  <a href="/">&larr; Back to home</a>
+</div>
+
+<!-- Hero -->
+<div class="hiw-hero">
+  <h2>How it Works</h2>
+  <p>Understand how Things Cloud MCP connects your AI to Things 3 from anywhere.</p>
+</div>
+
+<!-- The Problem -->
+<div class="hiw-section">
+  <div class="section-title">Local-only MCP servers</div>
+  <p>Most MCP servers for Things 3 run locally on your Mac, communicating directly with the Things app via AppleScript or URL schemes.</p>
+  <p>This means you can <strong>only manage tasks from the same machine</strong> where Things is running. If you want to use a web-based AI like Claude.ai or ChatGPT, or manage tasks from a Linux server, you are stuck.</p>
+</div>
+
+<!-- Our Approach -->
+<div class="hiw-section">
+  <div class="section-title">Talk directly to Things Cloud</div>
+  <p>Things Cloud MCP takes a different approach: it talks directly to <strong>Things Cloud</strong> &mdash; the sync service that keeps your tasks in sync across all your Apple devices.</p>
+  <p>We use a reverse-engineered Things Cloud SDK to read and write your tasks over the internet. This means the MCP server can run <strong>anywhere</strong> &mdash; on a remote server, in a Docker container, on a Linux machine &mdash; and any MCP-compatible AI client can connect to it.</p>
+  <p>The server implements the <strong>Streamable HTTP</strong> transport, so web-based clients like Claude.ai and ChatGPT can connect directly.</p>
+</div>
+
+<!-- Architecture -->
+<div class="hiw-section">
+  <div class="section-title">End-to-end flow</div>
+
+  <div class="arch-diagram">
+    <div class="arch-box">Your AI Client<span class="arch-sub">Claude.ai, ChatGPT, Claude Code, Cursor</span></div>
+    <div class="arch-arrow"><span class="arch-arrow-icon">&darr;</span><span class="arch-arrow-label">MCP over HTTP</span></div>
+    <div class="arch-box highlight">Things Cloud MCP Server<span class="arch-sub">This project</span></div>
+    <div class="arch-arrow"><span class="arch-arrow-icon">&darr;</span><span class="arch-arrow-label">Things Cloud API</span></div>
+    <div class="arch-box">Things Cloud<span class="arch-sub">Apple sync service</span></div>
+    <div class="arch-arrow"><span class="arch-arrow-icon">&darr;</span><span class="arch-arrow-label">Things Cloud Sync</span></div>
+    <div class="arch-box">Things 3<span class="arch-sub">iPhone / iPad / Mac</span></div>
+  </div>
+</div>
+
+<!-- Warning -->
+<div class="hiw-section">
+  <div class="section-title">Back up your data first</div>
+  <div class="warning-box">
+    <div class="warning-title">&#9888;&#65039; Unofficial API</div>
+    <p>This project uses a reverse-engineered, unofficial API to communicate with Things Cloud. While we have tested it thoroughly, there is always a risk when using unofficial APIs.</p>
+    <p><strong>Before connecting:</strong> Keep a current Things for Mac backup and verify that it can be restored. Sync is not a substitute for a recoverable backup.</p>
+    <p>The authors are not responsible for any data loss.</p>
+  </div>
+</div>
+
+<!-- What you can do -->
+<div class="hiw-section">
+  <div class="section-title">What you can do</div>
+  <ul class="cap-list">
+    <li><span class="cap-dot"></span> Read tasks, projects, areas, and tags</li>
+    <li><span class="cap-dot"></span> Create new tasks, projects, headings, areas, and tags</li>
+    <li><span class="cap-dot"></span> Edit tasks and projects &mdash; title, notes, schedule, deadline, tags, status</li>
+    <li><span class="cap-dot"></span> Move items to trash</li>
+    <li><span class="cap-dot"></span> Serialize each account's sync and write operations to prevent cursor races</li>
+    <li><span class="cap-dot"></span> Fail closed on unknown schemas, malformed events, and uncertain commits; never retry an uncertain write</li>
+    <li><span class="cap-dot"></span> Require explicit confirmation for permanent deletions and stopping recurrence</li>
+    <li><span class="cap-dot"></span> All changes sync to your Things apps in real-time via Things Cloud</li>
+  </ul>
+</div>
+
+</div><!-- /container -->
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <p>Powered by <a href="https://github.com/arthursoares/things-cloud-sdk" target="_blank" rel="noopener">Things Cloud SDK</a></p>
+    <p style="margin-top:6px;font-size:12px">Not affiliated with Cultured Code. Built through reverse engineering.</p>
+  </div>
+</footer>
+
+</body>
+</html>
